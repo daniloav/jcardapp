@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================
-# Cria a VM jcard-server (A1.Flex, Always Free) contornando o
+# Cria as DUAS VMs do JcardApp (A1.Flex, Always Free) contornando o
 # "Out of host capacity", que é o normal em sa-saopaulo-1: a Oracle libera
 # capacidade Ampere aos poucos.
+#
+# Topologia igual à do projeto ebd-samambaia, que roda assim em produção hoje:
+#   jcard-app  -> caddy + frontend + backend
+#   jcard-db   -> Postgres
+# Cada uma com 1 OCPU / 1 GB, o menor pedido possível — o que maximiza a chance
+# de encaixar num host cheio. Ambas precisam de swap (o bootstrap cria).
 #
 # Rode do Mac e deixe em segundo plano:
 #   nohup bash scripts/oci-a1-retry.sh > /tmp/a1.log 2>&1 &
@@ -27,38 +33,35 @@ fi
 source "$ENV_FILE"
 
 : "${COMPARTMENT_ID:?}" ; : "${SUBNET_ID:?}" ; : "${IMAGE_ID:?}" ; : "${AD:?}"
-NOME="${DISPLAY_NAME:-jcard-server}"
+VMS=(${VMS:-jcard-app jcard-db})
 SSH_KEY="${SSH_KEY_FILE:-$HOME/.ssh/jcard_deploy.pub}"
 INTERVALO="${SLEEP_SECONDS:-60}"
 
-# Escada de tamanhos, do melhor para o mínimo viável. A cada rodada tenta TODOS,
-# porque capacidade Ampere aparece em fatias: pedir menos aumenta muito a chance
-# de encaixar num host com pouco espaço livre.
+# 1 OCPU / 1 GB por VM — o mínimo que a A1.Flex aceita, e o mesmo tamanho das
+# VMs do EBD. Usa 2 OCPU / 2 GB dos 4 OCPU / 24 GB do Always Free, então sobra
+# cota de sobra; o limite que aperta é o disco (50 GB de boot por VM, 200 GB no
+# total da conta -> ficaremos em 194 GB com o EBD junto).
 #
-# O piso é 1 OCPU / 3 GB. A A1.Flex aceita até 1 GB (igual às VMs do EBD), mas
-# 1 GB não roda a stack inteira numa máquina só — foi justamente por isso que o
-# EBD precisou de DUAS VMs de 1 GB, e ainda com 3 GB de swap. Aqui rodam juntos
-# Postgres + Quarkus + nginx + Caddy: abaixo de ~2 GB o backend não sobe.
-#
-# Pegar o que aparecer vale mais que esperar o ideal: a A1.Flex é
-# redimensionável depois (parar a instância → editar o shape → ligar).
-ESCADA=(${ESCADA:-"2:12" "1:6" "1:4" "1:3"})
+# Se um dia precisar de mais, a A1.Flex é redimensionável: parar a instância,
+# editar o shape, ligar de novo.
+OCPUS="${OCPUS:-1}" ; MEM="${MEM_GB:-1}"
 tentativa=0
 
-if [[ -n "$(oci compute instance list -c "$COMPARTMENT_ID" --display-name "$NOME" \
-      --query "data[?\"lifecycle-state\"!='TERMINATED'] | [0].id" --raw-output 2>/dev/null)" ]]; then
-  echo "✅ $NOME já existe. Nada a fazer."
-  exit 0
-fi
+existe() {
+  oci compute instance list -c "$COMPARTMENT_ID" --display-name "$1" \
+    --query "data[?\"lifecycle-state\"!='TERMINATED'] | [0].id" --raw-output 2>/dev/null
+}
 
-echo "🚀 Criando '$NOME' (A1.Flex). Ctrl+C para parar."
+echo "🚀 Criando ${VMS[*]} (A1.Flex · ${OCPUS} OCPU / ${MEM} GB cada). Ctrl+C para parar."
 
 while true; do
   tentativa=$((tentativa + 1))
+  faltam=0
 
-  for passo in "${ESCADA[@]}"; do
-    OCPUS="${passo%%:*}" ; MEM="${passo##*:}"
-    printf '[%s] #%s %s OCPU / %s GB ... ' "$(date '+%F %T')" "$tentativa" "$OCPUS" "$MEM"
+  for nome in "${VMS[@]}"; do
+    if [[ -n "$(existe "$nome")" ]]; then continue; fi
+    faltam=1
+    printf '[%s] #%s %s ... ' "$(date '+%F %T')" "$tentativa" "$nome"
 
     if id=$(oci compute instance launch \
         --compartment-id "$COMPARTMENT_ID" --availability-domain "$AD" \
@@ -66,19 +69,19 @@ while true; do
         --shape-config "{\"ocpus\":${OCPUS},\"memoryInGBs\":${MEM}}" \
         --image-id "$IMAGE_ID" --subnet-id "$SUBNET_ID" \
         --boot-volume-size-in-gbs 50 --assign-public-ip true \
-        --display-name "$NOME" --ssh-authorized-keys-file "$SSH_KEY" \
+        --display-name "$nome" --ssh-authorized-keys-file "$SSH_KEY" \
         --query 'data.id' --raw-output 2>/dev/null); then
-      echo "✅"
-      echo "[$(date '+%F %T')] $NOME criada com ${OCPUS} OCPU / ${MEM} GB: $id"
-      if [[ "$MEM" -lt 4 ]]; then
-        echo "⚠️  Com ${MEM} GB, rode o bootstrap com swap:  bash scripts/oci-bootstrap.sh --swap"
-      fi
-      echo "Próximo passo: bash scripts/oci-descobrir.sh"
-      exit 0
+      echo "✅ criada: $id"
+    else
+      echo "sem capacidade"
     fi
-    echo "sem capacidade"
     sleep 5
   done
 
+  if [[ "$faltam" -eq 0 ]]; then
+    echo "[$(date '+%F %T')] ✅ ${VMS[*]} existem."
+    echo "Próximo passo: bash scripts/oci-descobrir.sh"
+    exit 0
+  fi
   sleep "$INTERVALO"
 done

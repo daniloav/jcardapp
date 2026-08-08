@@ -24,6 +24,10 @@ USER 1001
 EXPOSE 8080
 
 # MaxRAMPercentage em vez de -Xmx: o heap acompanha o mem_limit do compose sem
-# precisar mexer aqui. G1 vale a pena porque a A1 tem 2 vCPUs (a VM do EBD, com
-# 1 vCPU, usava SerialGC).
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=70.0", "-XX:+UseG1GC", "-jar", "quarkus-run.jar"]
+# precisar mexer aqui. 60% de 700 MB deixa ~280 MB para metaspace, threads e
+# buffers fora do heap — abaixo disso o container leva OOM kill.
+#
+# SerialGC, e não G1: a VM tem 1 vCPU, então um coletor paralelo só disputa CPU
+# com a própria aplicação e ainda reserva mais memória. Mesma escolha do EBD,
+# que roda neste shape em produção.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=60.0", "-XX:+UseSerialGC", "-jar", "quarkus-run.jar"]

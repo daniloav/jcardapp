@@ -1,11 +1,12 @@
 name: CD · Deploy OCI
 
-# Uma VM Ampere A1 (ARM64) com a stack inteira + imagens no GHCR:
+# Duas VMs Ampere A1 (ARM64, 1 OCPU / 1 GB) + imagens no GHCR:
+#   jcard-app -> caddy + frontend + backend   |   jcard-db -> Postgres
 #  1) build : compila no runner (amd64, nativo) e empacota imagens linux/arm64.
 #  2) deploy: a VM só faz `docker compose pull && up` — nada de build lá.
 #
-# Por que compilar fora do Dockerfile: as VMs são aarch64, e buildar Maven/Node
-# sob emulação QEMU custa ~5x. Bytecode Java e bundle JS são portáveis, então só
+# Por que compilar fora do Dockerfile: as VMs são aarch64 (e têm 1 GB — buildar
+# nelas nem caberia), e sob emulação QEMU no runner custa ~5x. Bytecode Java e bundle JS são portáveis, então só
 # a imagem base precisa ser ARM. Ver docs/CICD.md.
 #
 # Enquanto os secrets OCI_* forem placeholder, o deploy roda em MODO MOCK e a
@@ -165,7 +166,7 @@ jobs:
         if: steps.cfg.outputs.ready == 'true'
         run: |
           rsync -az -e "ssh -i ~/.ssh/id_deploy -o ServerAliveInterval=30" \
-            docker-compose.yml Caddyfile "$OCI_USER@$OCI_HOST:~/$APP_DIR/"
+            docker-compose.app.yml docker-compose.db.yml Caddyfile "$OCI_USER@$OCI_HOST:~/$APP_DIR/"
           rsync -az -e "ssh -i ~/.ssh/id_deploy" scripts/ "$OCI_USER@$OCI_HOST:~/$APP_DIR/scripts/"
 
       - name: Gravar as chaves JWT no volume ./keys
@@ -180,13 +181,13 @@ jobs:
         run: |
           printf '%s' "$GHCR_PAT" | ssh -i ~/.ssh/id_deploy "$OCI_USER@$OCI_HOST" \
             "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
-          # `pull` só busca as imagens da app; o Postgres roda no mesmo compose e
-          # não é recriado à toa — `up -d` só mexe no que mudou.
+          # Só a VM de app é tocada. O Postgres vive na jcard-db e não muda a
+          # cada deploy — mexer nele aqui seria risco sem ganho.
           ssh -i ~/.ssh/id_deploy -o ServerAliveInterval=30 "$OCI_USER@$OCI_HOST" "
             cd ~/$APP_DIR &&
-            docker compose --env-file .env pull backend frontend &&
-            docker compose --env-file .env up -d --remove-orphans &&
-            docker compose ps &&
+            docker compose -f docker-compose.app.yml --env-file .env pull &&
+            docker compose -f docker-compose.app.yml --env-file .env up -d --remove-orphans &&
+            docker compose -f docker-compose.app.yml ps &&
             docker image prune -f >/dev/null 2>&1 || true
           "
 

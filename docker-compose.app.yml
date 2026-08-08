@@ -1,53 +1,19 @@
-# Stack completa numa VM só (jcard-server): Postgres + backend + frontend + Caddy.
+# Stack da VM de APP (jcard-app · A1.Flex 1 OCPU / 1 GB): caddy + frontend + backend.
+# O Postgres roda na VM jcard-db — defina JCARD_DB_HOST no .env com o IP PRIVADO dela.
 #
-# Para ~10 pessoas uma VM basta com folga, e a topologia de 2 VMs do projeto EBD
-# só existiu lá porque aquelas máquinas tinham 1 GB de RAM. Aqui a A1 tem 12 GB,
-# então o banco e o app convivem sem apertar.
+# Os limites abaixo são apertados de propósito: 1 GB de RAM tem de servir ao SO,
+# ao Docker e a três containers. São os mesmos números que o projeto
+# ebd-samambaia roda em produção nesse mesmo shape. O swap de 3 GB criado pelo
+# oci-bootstrap.sh é a rede de segurança.
 #
-# Uso na VM:  docker compose --env-file .env up -d
+# Uso na VM:  docker compose -f docker-compose.app.yml --env-file .env up -d
 services:
-  db:
-    image: postgres:16-alpine
-    container_name: jcard-postgres
-    restart: unless-stopped
-    # Ajustável porque a capacidade Ampere decide o tamanho da VM: numa de 3 GB
-    # os padrões daqui não caberiam. Ver JCARD_MEM_* no .env.
-    mem_limit: ${JCARD_MEM_DB:-2g}
-    # Sem `ports:` de propósito. O Postgres fica acessível SÓ pela rede interna
-    # do compose — nem no IP privado, nem no público. É mais seguro que a
-    # topologia de 2 VMs, onde a porta 5432 precisava trafegar entre máquinas.
-    command:
-      - "postgres"
-      - "-c"
-      - "shared_buffers=${JCARD_PG_SHARED_BUFFERS:-256MB}"
-      - "-c"
-      - "effective_cache_size=${JCARD_PG_CACHE:-768MB}"
-      - "-c"
-      # 10 pessoas usando algumas vezes por mês não precisam de mais que isto.
-      - "max_connections=20"
-      - "-c"
-      - "work_mem=8MB"
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-jcard}
-      POSTGRES_USER: ${POSTGRES_USER:-jcard}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
-    volumes:
-      - jcard_pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jcard} -d ${POSTGRES_DB:-jcard}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks: [jcard-net]
-
   backend:
     image: ghcr.io/daniloav/jcard-backend:${JCARD_IMAGE_TAG:-latest}
     container_name: jcard-backend
     restart: unless-stopped
-    mem_limit: ${JCARD_MEM_BACKEND:-2g}
-    depends_on:
-      db:
-        condition: service_healthy
+    # Sobra ~700 MB depois do SO e dos outros dois containers.
+    mem_limit: ${JCARD_MEM_BACKEND:-700m}
     volumes:
       # Chaves JWT gravadas pelo CD a partir dos secrets: a imagem fica sem
       # segredo e os tokens sobrevivem ao deploy.
@@ -55,7 +21,7 @@ services:
     environment:
       JCARD_JWT_PUBLIC_LOCATION: /keys/publicKey.pem
       JCARD_JWT_PRIVATE_LOCATION: /keys/privateKey.pem
-      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-jcard}
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://${JCARD_DB_HOST:?defina JCARD_DB_HOST no .env}:${JCARD_DB_PORT:-5432}/${POSTGRES_DB:-jcard}
       QUARKUS_DATASOURCE_USERNAME: ${POSTGRES_USER:-jcard}
       QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
       JCARD_ADMIN_NOME: ${JCARD_ADMIN_NOME:-Titular do cartao}
@@ -70,8 +36,9 @@ services:
       JCARD_SMTP_PORT: ${JCARD_SMTP_PORT:-587}
       JCARD_SMTP_USER: ${JCARD_SMTP_USER:-}
       JCARD_SMTP_PASS: ${JCARD_SMTP_PASS:-}
-      # Regexes do parser: permitem calibrar um layout novo do Itaú mexendo só
-      # no .env + restart, sem build nem deploy. Vazias = usa o padrão.
+      # Regexes do parser: repassadas para permitir calibrar um layout novo do
+      # Itaú mexendo só no .env + restart, sem build nem deploy. Vazias aqui
+      # significam "usa o padrão do application.properties".
       JCARD_PARSER_ITAU_PORTADOR: ${JCARD_PARSER_ITAU_PORTADOR:-}
       JCARD_PARSER_ITAU_LANCAMENTO: ${JCARD_PARSER_ITAU_LANCAMENTO:-}
       JCARD_PARSER_ITAU_TOTAL: ${JCARD_PARSER_ITAU_TOTAL:-}
@@ -82,7 +49,7 @@ services:
     image: ghcr.io/daniloav/jcard-frontend:${JCARD_IMAGE_TAG:-latest}
     container_name: jcard-frontend
     restart: unless-stopped
-    mem_limit: 128m
+    mem_limit: 96m
     depends_on: [backend]
     networks: [jcard-net]
 
@@ -90,7 +57,7 @@ services:
     image: caddy:2-alpine
     container_name: jcard-caddy
     restart: unless-stopped
-    mem_limit: 128m
+    mem_limit: 96m
     depends_on: [frontend]
     ports:
       - "80:80"
@@ -102,7 +69,6 @@ services:
     networks: [jcard-net]
 
 volumes:
-  jcard_pgdata:
   caddy_data:
   caddy_config:
 

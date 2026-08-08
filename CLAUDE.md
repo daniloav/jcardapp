@@ -52,7 +52,7 @@ Os tetos e o que foi feito para caber neles estão na §8.
 | Backend | Java **17** · **Quarkus 3.15** · Hibernate Panache · **Flyway** · JWT RS256 · **PDFBox** |
 | Frontend | **Angular 17** standalone + signals · SCSS próprio · PWA com service worker escrito à mão |
 | Banco | **PostgreSQL 16** |
-| Infra | Docker Compose · **1 VM OCI Ampere A1 (ARM64)** com a stack inteira · Caddy (HTTPS) + nginx · imagens no GHCR |
+| Infra | Docker Compose · **2 VMs OCI Ampere A1 (ARM64, 1 OCPU / 1 GB)** · Caddy (HTTPS) + nginx · imagens no GHCR |
 | Cloud | Oracle Cloud, região `sa-saopaulo-1` · DuckDNS · SMTP do Gmail |
 
 Ambiente do Danilo: **Node 18.13** (por isso Angular 17, não 18+), Maven 3.9,
@@ -65,7 +65,8 @@ Java 19 rodando target 17. Shell **zsh** (os scripts usam shebang bash).
 ```
 jcardapp/
 ├── CLAUDE.md · README.md · .env.example
-├── docker-compose.yml          ← PROD: caddy + frontend + backend + Postgres, tudo numa VM
+├── docker-compose.app.yml      ← PROD jcard-app: caddy + frontend + backend
+├── docker-compose.db.yml       ← PROD jcard-db: só Postgres, bind no IP privado
 ├── docker-compose.dev.yml      ← só Postgres (dev)
 ├── Caddyfile                   ← HTTPS Let's Encrypt em jcardapp.duckdns.org
 ├── backend/                    ← Quarkus, pacote br.com.jcard
@@ -116,7 +117,8 @@ com troca de senha obrigatória.
 
 ## 6. Decisões que não são óbvias no código
 
-- **Imagens ARM sem emulação.** As VMs são Ampere A1 (aarch64). O `cd.yml`
+- **Imagens ARM sem emulação.** As VMs são Ampere A1 (aarch64) e, com 1 GB, nem
+  comportariam um build. O `cd.yml`
   compila no runner amd64 (`mvn package`, `ng build`) e os `Dockerfile.runtime`
   só fazem `COPY` do artefato numa base arm64. Buildar Maven sob QEMU custaria ~5x.
 - **`EntidadeBase` com `IDENTITY` e `getId()`.** O schema é `BIGSERIAL`; o
@@ -156,9 +158,11 @@ com troca de senha obrigatória.
 - **Rede** (criada em 07/08/2026): VCN `jcard-vcn` `10.1.0.0/16`, subnet pública
   `jcard-subnet` `10.1.1.0/24`, IGW e security list `jcard-sl` (ingress só 22/80/443).
   OCIDs em `scripts/.oci-launch.env` (não versionado).
-- **Uma VM só**: `jcard-server`, A1.Flex 2 OCPU / 12 GB (cai para 1/6 se faltar
-  capacidade), com Postgres + backend + frontend + Caddy. Para ~10 pessoas sobra.
-  O Postgres **não tem porta publicada** — vive só na rede interna do compose.
+- **Duas VMs de 1 OCPU / 1 GB** (mesmo shape e topologia do `ebd-samambaia`, que
+  roda assim em produção): `jcard-app` (caddy + frontend + backend) e `jcard-db`
+  (Postgres). 1 GB não comporta banco e app juntos — daí a separação — e é o menor
+  pedido possível, o mais fácil de alocar quando a capacidade Ampere está escassa.
+  **Swap de 3 GB é obrigatório** nas duas; sem ele o primeiro pico leva OOM kill.
 - **Tetos do Always Free a respeitar**: **4 OCPU + 24 GB de A1** e **200 GB de
   storage** na tenancy inteira (94 GB já são do EBD). Os limites que a API reporta
   são maiores, mas isso é o teto administrativo da Oracle, não permissão de gasto —
@@ -176,8 +180,8 @@ com troca de senha obrigatória.
 
 | Cota | Teto | Como o projeto cabe |
 |---|---|---|
-| Ampere A1 (tenancy) | 4 OCPU / 24 GB | 1 VM de 2 OCPU / 12 GB (cai para 1/6 se faltar capacidade) |
-| Block storage (tenancy) | 200 GB | +50 GB de boot; 94 GB já são do EBD → 144 GB |
+| Ampere A1 (tenancy) | 4 OCPU / 24 GB | 2 VMs de 1 OCPU / 1 GB = 2 OCPU / 2 GB (sobra muito) |
+| Block storage (tenancy) | 200 GB | 2 × 50 GB de boot; com os 94 GB do EBD → **194 GB, só 6 de folga** |
 | `E2.1.Micro` | 2 | **esgotado pelo EBD** — por isso Ampere |
 | GHCR em repo privado | 500 MB | o CD apaga versões antigas, guardando 5 (`delete-package-versions`) |
 | Actions em repo privado | 2.000 min/mês | Semgrep e Trivy só em PR e no cron semanal; o resto roda sempre |
@@ -192,8 +196,9 @@ ARM), Object Storage acima de 20 GB, mais de 5 backups de boot volume.
 - ✅ Frontend Angular 17 + PWA compilando (84 kB no bundle inicial).
 - ✅ CI/CD escritos; o CD roda em **modo mock** enquanto os secrets `OCI_*`
   estiverem vazios — a esteira fica verde antes de as VMs existirem.
-- ✅ Rede OCI provisionada e endurecida (sem regra para 5432).
-- ⏳ **VM A1 aguardando capacidade** na Oracle (retry rodando).
+- ✅ Rede OCI provisionada (5432 restrita à subnet; aperte no /32 com
+  `scripts/oci-restringir-db.sh` depois que as VMs subirem).
+- ⏳ **VMs A1 aguardando capacidade** na Oracle (retry rodando).
 - ⏳ **Parser do Itaú precisa ser calibrado com um PDF real.** A estrutura e os
   testes estão prontos contra um fixture anonimizado; as regexes foram escritas
   a partir do layout típico do Itaú e podem precisar de ajuste. Guia:
