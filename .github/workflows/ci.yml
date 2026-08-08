@@ -5,9 +5,18 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # Varredura de segurança semanal, para pegar CVE nova em dependência que não
+  # mudou. Segunda, 6h BRT.
+  schedule:
+    - cron: '0 9 * * 1'
 
 permissions:
   contents: read
+
+# Repositório privado no plano Free tem 2.000 min/mês de Actions. Build, testes,
+# migrations e gitleaks rodam sempre (são rápidos e pegam quebra real). Semgrep e
+# Trivy, que são os caros, ficam em PR e no agendamento semanal — em push direto
+# na main eles não acrescentam nada que o PR já não tenha visto.
 
 jobs:
   # ------------------------------------------------- build e testes ------
@@ -111,6 +120,7 @@ jobs:
   # --------------------------------------------------------- segurança ---
   sast:
     name: SAST · Semgrep
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     container:
       image: semgrep/semgrep
@@ -128,6 +138,7 @@ jobs:
 
   trivy:
     name: Dependências e IaC · Trivy
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -148,6 +159,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with: { name: trivy-report, path: trivy.txt }
 
+  # Roda sempre: leva segundos, e segredo commitado é irreversível — uma vez no
+  # histórico, já vazou.
   gitleaks:
     name: Segredos · gitleaks
     runs-on: ubuntu-latest

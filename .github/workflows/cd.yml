@@ -1,6 +1,6 @@
 name: CD · Deploy OCI
 
-# Topologia de 2 VMs Ampere A1 (ARM64) + imagens no GHCR:
+# Uma VM Ampere A1 (ARM64) com a stack inteira + imagens no GHCR:
 #  1) build : compila no runner (amd64, nativo) e empacota imagens linux/arm64.
 #  2) deploy: a VM só faz `docker compose pull && up` — nada de build lá.
 #
@@ -90,6 +90,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # O GHCR em repositório privado tem 500 MB no plano Free e cada deploy
+      # publica uma camada nova. Sem esta limpeza a cota estoura em poucos meses
+      # e o registry passa a cobrar. Guardamos 5 versões — o suficiente para
+      # rollback (JCARD_IMAGE_TAG=<sha>) sem acumular lixo.
+      - name: Apagar versões antigas das imagens
+        continue-on-error: true   # falta de permissão não pode derrubar o deploy
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: jcard-backend
+          package-type: container
+          min-versions-to-keep: 5
+          delete-only-untagged-versions: false
+
+      - name: Apagar versões antigas do frontend
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: jcard-frontend
+          package-type: container
+          min-versions-to-keep: 5
+          delete-only-untagged-versions: false
+
   deploy:
     name: Deploy na VM de app (pull)
     runs-on: ubuntu-latest
@@ -142,7 +164,7 @@ jobs:
         if: steps.cfg.outputs.ready == 'true'
         run: |
           rsync -az -e "ssh -i ~/.ssh/id_deploy -o ServerAliveInterval=30" \
-            docker-compose.app.yml docker-compose.db.yml Caddyfile "$OCI_USER@$OCI_HOST:~/$APP_DIR/"
+            docker-compose.yml Caddyfile "$OCI_USER@$OCI_HOST:~/$APP_DIR/"
           rsync -az -e "ssh -i ~/.ssh/id_deploy" scripts/ "$OCI_USER@$OCI_HOST:~/$APP_DIR/scripts/"
 
       - name: Gravar as chaves JWT no volume ./keys
@@ -157,11 +179,13 @@ jobs:
         run: |
           printf '%s' "$GHCR_PAT" | ssh -i ~/.ssh/id_deploy "$OCI_USER@$OCI_HOST" \
             "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          # `pull` só busca as imagens da app; o Postgres roda no mesmo compose e
+          # não é recriado à toa — `up -d` só mexe no que mudou.
           ssh -i ~/.ssh/id_deploy -o ServerAliveInterval=30 "$OCI_USER@$OCI_HOST" "
             cd ~/$APP_DIR &&
-            docker compose -f docker-compose.app.yml --env-file .env pull &&
-            docker compose -f docker-compose.app.yml --env-file .env up -d --remove-orphans &&
-            docker compose -f docker-compose.app.yml ps &&
+            docker compose --env-file .env pull backend frontend &&
+            docker compose --env-file .env up -d --remove-orphans &&
+            docker compose ps &&
             docker image prune -f >/dev/null 2>&1 || true
           "
 

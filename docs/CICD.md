@@ -19,7 +19,7 @@ Dispara quando o CI passa na `main`, ou manualmente (`workflow_dispatch`).
 
 ### Por que o build não está no Dockerfile
 
-As VMs são **Ampere A1, aarch64**. O caminho óbvio — `docker build` multi-stage
+A VM é **Ampere A1, aarch64**. O caminho óbvio — `docker build` multi-stage
 com `--platform linux/arm64` — rodaria Maven e Node sob emulação QEMU, cerca de
 5x mais lento. E runner ARM gratuito do GitHub só existe em repositório público;
 este é privado, porque guarda dado financeiro.
@@ -41,10 +41,13 @@ Buildar localmente exige rodar `mvn package` / `ng build` antes.
 
 ### Deploy
 
-A VM de app nunca builda: `docker login ghcr` → `compose pull` → `up -d`. Leva
-~2 minutos. O job também envia o `.env`, o `Caddyfile`, os composes e grava as
-chaves JWT em `./keys` a partir dos secrets — a imagem não carrega segredo e os
-tokens sobrevivem ao deploy.
+A VM nunca builda: `docker login ghcr` → `compose pull backend frontend` →
+`up -d`. Leva ~2 minutos. O job também envia o `.env`, o `Caddyfile` e o
+`docker-compose.yml`, e grava as chaves JWT em `./keys` a partir dos secrets — a
+imagem não carrega segredo e os tokens sobrevivem ao deploy.
+
+O `pull` nomeia só `backend` e `frontend` de propósito: o Postgres roda no mesmo
+compose e não deve ser rebaixado/recriado a cada deploy.
 
 ### Modo mock
 
@@ -56,7 +59,7 @@ esteira verde antes de as VMs A1 existirem.
 
 | Secret | O que é |
 |---|---|
-| `OCI_SSH_HOST` | IP público da `jcard-app` |
+| `OCI_SSH_HOST` | IP público da `jcard-server` |
 | `OCI_SSH_USER` | `ubuntu` |
 | `OCI_SSH_KEY` | conteúdo de `~/.ssh/jcard_deploy` (chave **privada**) |
 | `OCI_ENV_FILE` | o `.env` de produção inteiro (ver `.env.example`) |
@@ -75,7 +78,7 @@ openssl genrsa -out privateKey.pem 2048 && openssl rsa -in privateKey.pem -pubou
 Todo build publica também a tag `<sha>`. Para voltar:
 
 ```bash
-ssh -i ~/.ssh/jcard_deploy ubuntu@<IP> "cd ~/jcardapp && sed -i 's/^JCARD_IMAGE_TAG=.*/JCARD_IMAGE_TAG=<sha>/' .env && docker compose -f docker-compose.app.yml --env-file .env up -d"
+ssh -i ~/.ssh/jcard_deploy ubuntu@<IP> "cd ~/jcardapp && sed -i 's/^JCARD_IMAGE_TAG=.*/JCARD_IMAGE_TAG=<sha>/' .env && docker compose --env-file .env up -d"
 ```
 
 ## Escopo do token `gh`

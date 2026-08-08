@@ -27,6 +27,20 @@ código e da UI: **português**.
 Toda fatura importada dispara e-mail a **todos** os utilizadores ativos pedindo
 avaliação de responsabilidade.
 
+### Premissa inegociável: custo US$ 0
+
+**Tudo tem de ser gratuito.** Nenhuma decisão de infra pode gerar cobrança, nem
+"uns centavos". Isso restringe escolhas de shape, storage, registry e CI, e
+qualquer mudança nessas áreas precisa ser conferida antes de subir:
+
+```bash
+bash scripts/verificar-custo-zero.sh
+```
+
+O risco é concreto porque **a conta OCI é Pay-As-You-Go**, não Free Trial: a
+Oracle deixa criar além do Always Free e cobra em silêncio. Os tetos e o que já
+foi feito para caber neles estão na §8.
+
 ## 2. Stack
 
 | Camada | Tecnologia |
@@ -34,7 +48,7 @@ avaliação de responsabilidade.
 | Backend | Java **17** · **Quarkus 3.15** · Hibernate Panache · **Flyway** · JWT RS256 · **PDFBox** |
 | Frontend | **Angular 17** standalone + signals · SCSS próprio · PWA com service worker escrito à mão |
 | Banco | **PostgreSQL 16** |
-| Infra | Docker Compose · **2 VMs OCI Ampere A1 (ARM64)** · Caddy (HTTPS) + nginx · imagens no GHCR |
+| Infra | Docker Compose · **1 VM OCI Ampere A1 (ARM64)** com a stack inteira · Caddy (HTTPS) + nginx · imagens no GHCR |
 | Cloud | Oracle Cloud, região `sa-saopaulo-1` · DuckDNS · SMTP do Gmail |
 
 Ambiente do Danilo: **Node 18.13** (por isso Angular 17, não 18+), Maven 3.9,
@@ -47,8 +61,7 @@ Java 19 rodando target 17. Shell **zsh** (os scripts usam shebang bash).
 ```
 jcardapp/
 ├── CLAUDE.md · README.md · .env.example
-├── docker-compose.app.yml      ← PROD VM app: caddy + frontend + backend (imagens do GHCR)
-├── docker-compose.db.yml       ← PROD VM banco: só Postgres, bind no IP privado
+├── docker-compose.yml          ← PROD: caddy + frontend + backend + Postgres, tudo numa VM
 ├── docker-compose.dev.yml      ← só Postgres (dev)
 ├── Caddyfile                   ← HTTPS Let's Encrypt em jcardapp.duckdns.org
 ├── backend/                    ← Quarkus, pacote br.com.jcard
@@ -137,17 +150,37 @@ com troca de senha obrigatória.
 ## 8. Infraestrutura
 
 - **Rede** (criada em 07/08/2026): VCN `jcard-vcn` `10.1.0.0/16`, subnet pública
-  `jcard-subnet` `10.1.1.0/24`, IGW e security list `jcard-sl`. OCIDs em
-  `scripts/.oci-launch.env` (não versionado).
-- **VMs**: `jcard-app` e `jcard-db`, A1.Flex 2 OCPU / 12 GB cada = o teto exato do
-  Always Free (4 OCPU / 24 GB) → **US$ 0**.
-  ⚠️ O par `E2.1.Micro` do Always Free já está **todo em uso pelo projeto
-  `ebd-samambaia`** (`available: 0`) — daí a escolha por Ampere.
+  `jcard-subnet` `10.1.1.0/24`, IGW e security list `jcard-sl` (ingress só 22/80/443).
+  OCIDs em `scripts/.oci-launch.env` (não versionado).
+- **Uma VM só**: `jcard-server`, A1.Flex 2 OCPU / 12 GB (cai para 1/6 se faltar
+  capacidade), com Postgres + backend + frontend + Caddy. Para ~10 pessoas sobra.
+  O Postgres **não tem porta publicada** — vive só na rede interna do compose.
+- ⚠️ **A conta é Pay-As-You-Go**, não Free Trial: os limites estão muito acima do
+  gratuito (A1: 41 OCPU / 277 GB; storage 30 TB), então a Oracle deixa criar além
+  do Always Free e **cobra**. Tetos a respeitar: **4 OCPU + 24 GB de A1** e
+  **200 GB de storage** na tenancy inteira (94 GB já são do EBD).
+- ⚠️ `E2.1.Micro` tem **limite 2 na tenancy e as duas são do `ebd-samambaia`** —
+  não dá para criar mais uma sem pedir aumento de limite (e pagar).
 - **Capacidade A1 é o gargalo**: `sa-saopaulo-1` responde "Out of host capacity"
-  com frequência. `scripts/oci-a1-retry.sh` insiste em segundo plano e, depois de
-  ~40 min, cai para 1 OCPU/6 GB por VM.
+  com frequência. `scripts/oci-a1-retry.sh` insiste em segundo plano e, após 10
+  tentativas, passa a pedir 1 OCPU/6 GB. A A1.Flex é redimensionável depois
+  (parar → editar shape → ligar), então vale pegar a capacidade que aparecer.
 - **Deploy**: merge na `main` → CI → CD publica no GHCR privado e a VM só faz
   `pull` + `up`. Rollback: `JCARD_IMAGE_TAG=<sha>` no `.env`.
+
+### O que já foi feito para caber no gratuito
+
+| Cota | Teto | Como o projeto cabe |
+|---|---|---|
+| Ampere A1 (tenancy) | 4 OCPU / 24 GB | 1 VM de 2 OCPU / 12 GB (cai para 1/6 se faltar capacidade) |
+| Block storage (tenancy) | 200 GB | +50 GB de boot; 94 GB já são do EBD → 144 GB |
+| `E2.1.Micro` | 2 | **esgotado pelo EBD** — por isso Ampere |
+| GHCR em repo privado | 500 MB | o CD apaga versões antigas, guardando 5 (`delete-package-versions`) |
+| Actions em repo privado | 2.000 min/mês | Semgrep e Trivy só em PR e no cron semanal; o resto roda sempre |
+| Load balancer | 1 (10 Mbps) | não usamos — o Caddy na própria VM faz TLS |
+
+⚠️ **Não** usar: `eclipse-temurin:17-jre-alpine` (só existe em amd64, quebra no
+ARM), Object Storage acima de 20 GB, mais de 5 backups de boot volume.
 
 ## 9. Estado do projeto
 
@@ -155,8 +188,8 @@ com troca de senha obrigatória.
 - ✅ Frontend Angular 17 + PWA compilando (84 kB no bundle inicial).
 - ✅ CI/CD escritos; o CD roda em **modo mock** enquanto os secrets `OCI_*`
   estiverem vazios — a esteira fica verde antes de as VMs existirem.
-- ✅ Rede OCI provisionada.
-- ⏳ **VMs A1 aguardando capacidade** na Oracle (retry rodando).
+- ✅ Rede OCI provisionada e endurecida (sem regra para 5432).
+- ⏳ **VM A1 aguardando capacidade** na Oracle (retry rodando).
 - ⏳ **Parser do Itaú precisa ser calibrado com um PDF real.** A estrutura e os
   testes estão prontos contra um fixture anonimizado; as regexes foram escritas
   a partir do layout típico do Itaú e podem precisar de ajuste. Guia:
