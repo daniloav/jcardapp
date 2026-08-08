@@ -8,6 +8,7 @@ import br.com.jcard.security.UsuarioLogado;
 import br.com.jcard.service.ReivindicacaoService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -32,6 +33,7 @@ public class LancamentoResource {
     /** "Essa compra foi minha." */
     @POST
     @Path("/{id}/reivindicar")
+    @Transactional
     public Responses.LancamentoResponse reivindicar(@PathParam("id") Long id,
                                                     Requests.Reivindicar req) {
         Usuario eu = logado.exigirSenhaTrocada();
@@ -42,6 +44,7 @@ public class LancamentoResource {
     /** Desiste do lançamento; ele volta ao pool. */
     @DELETE
     @Path("/{id}/reivindicar")
+    @Transactional
     public Responses.LancamentoResponse desistir(@PathParam("id") Long id) {
         Usuario eu = logado.exigirSenhaTrocada();
         return Responses.LancamentoResponse.de(servico.desistir(id, eu), eu.id);
@@ -51,6 +54,7 @@ public class LancamentoResource {
     @POST
     @Path("/{id}/arbitrar")
     @RolesAllowed(TokenService.ADMIN)
+    @Transactional
     public Responses.LancamentoResponse arbitrar(@PathParam("id") Long id,
                                                  @Valid Requests.Arbitrar req) {
         Usuario admin = logado.get();

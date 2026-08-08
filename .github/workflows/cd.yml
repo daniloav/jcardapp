@@ -1,0 +1,179 @@
+name: CD · Deploy OCI
+
+# Topologia de 2 VMs Ampere A1 (ARM64) + imagens no GHCR:
+#  1) build : compila no runner (amd64, nativo) e empacota imagens linux/arm64.
+#  2) deploy: a VM só faz `docker compose pull && up` — nada de build lá.
+#
+# Por que compilar fora do Dockerfile: as VMs são aarch64, e buildar Maven/Node
+# sob emulação QEMU custa ~5x. Bytecode Java e bundle JS são portáveis, então só
+# a imagem base precisa ser ARM. Ver docs/CICD.md.
+#
+# Enquanto os secrets OCI_* forem placeholder, o deploy roda em MODO MOCK e a
+# esteira fica verde antes de as VMs existirem.
+
+on:
+  workflow_dispatch: {}
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-oci
+  cancel-in-progress: false
+
+env:
+  IMAGE_BACKEND: ghcr.io/daniloav/jcard-backend
+  IMAGE_FRONTEND: ghcr.io/daniloav/jcard-frontend
+
+jobs:
+  build:
+    name: Build e push das imagens arm64 (GHCR)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+
+      # ---- compila nativo (rápido) ----
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17', cache: maven }
+      - name: Gerar chaves JWT de build (as reais vêm dos secrets em runtime)
+        run: bash scripts/gen-jwt-keys.sh
+      - name: Empacotar backend
+        working-directory: backend
+        run: mvn -B -ntp package -DskipTests
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Compilar frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npx ng build
+
+      # ---- empacota em imagem ARM ----
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Login no GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Backend → linux/arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.runtime
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_BACKEND }}:latest,${{ env.IMAGE_BACKEND }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Frontend → linux/arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.runtime
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_FRONTEND }}:latest,${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy na VM de app (pull)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 20
+    env:
+      OCI_HOST: ${{ secrets.OCI_SSH_HOST }}
+      OCI_USER: ${{ secrets.OCI_SSH_USER }}
+      OCI_SSH_KEY: ${{ secrets.OCI_SSH_KEY }}
+      OCI_ENV: ${{ secrets.OCI_ENV_FILE }}
+      JWT_PRIV: ${{ secrets.JCARD_JWT_PRIVATE_KEY }}
+      JWT_PUB: ${{ secrets.JCARD_JWT_PUBLIC_KEY }}
+      GHCR_USER: ${{ secrets.JCARD_GHCR_USER }}
+      GHCR_PAT: ${{ secrets.JCARD_GHCR_PAT }}
+      APP_DIR: jcardapp
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+
+      - name: Os secrets OCI estão preenchidos?
+        id: cfg
+        run: |
+          if [ -n "$OCI_HOST" ] && [ "$OCI_HOST" != "CHANGEME" ] \
+             && [ -n "$OCI_USER" ] && [ -n "$OCI_SSH_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: MOCK — VMs ainda não provisionadas
+        if: steps.cfg.outputs.ready != 'true'
+        run: |
+          echo "::notice title=Deploy MOCK::Secrets OCI ausentes. As imagens foram publicadas no GHCR; o deploy roda quando as VMs A1 subirem."
+
+      - name: Configurar SSH
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$OCI_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$OCI_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Enviar o .env de produção
+        if: steps.cfg.outputs.ready == 'true' && env.OCI_ENV != ''
+        run: |
+          ssh -i ~/.ssh/id_deploy -o ServerAliveInterval=30 "$OCI_USER@$OCI_HOST" "mkdir -p ~/$APP_DIR"
+          printf '%s' "$OCI_ENV" | ssh -i ~/.ssh/id_deploy "$OCI_USER@$OCI_HOST" "cat > ~/$APP_DIR/.env && chmod 600 ~/$APP_DIR/.env"
+
+      - name: Sincronizar compose, Caddyfile e scripts
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          rsync -az -e "ssh -i ~/.ssh/id_deploy -o ServerAliveInterval=30" \
+            docker-compose.app.yml docker-compose.db.yml Caddyfile "$OCI_USER@$OCI_HOST:~/$APP_DIR/"
+          rsync -az -e "ssh -i ~/.ssh/id_deploy" scripts/ "$OCI_USER@$OCI_HOST:~/$APP_DIR/scripts/"
+
+      - name: Gravar as chaves JWT no volume ./keys
+        if: steps.cfg.outputs.ready == 'true' && env.JWT_PRIV != '' && env.JWT_PUB != ''
+        run: |
+          ssh -i ~/.ssh/id_deploy "$OCI_USER@$OCI_HOST" "mkdir -p ~/$APP_DIR/keys && chmod 700 ~/$APP_DIR/keys"
+          printf '%s' "$JWT_PRIV" | ssh -i ~/.ssh/id_deploy "$OCI_USER@$OCI_HOST" "cat > ~/$APP_DIR/keys/privateKey.pem && chmod 600 ~/$APP_DIR/keys/privateKey.pem"
+          printf '%s' "$JWT_PUB"  | ssh -i ~/.ssh/id_deploy "$OCI_USER@$OCI_HOST" "cat > ~/$APP_DIR/keys/publicKey.pem"
+
+      - name: Pull e up (sem build na VM)
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          printf '%s' "$GHCR_PAT" | ssh -i ~/.ssh/id_deploy "$OCI_USER@$OCI_HOST" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          ssh -i ~/.ssh/id_deploy -o ServerAliveInterval=30 "$OCI_USER@$OCI_HOST" "
+            cd ~/$APP_DIR &&
+            docker compose -f docker-compose.app.yml --env-file .env pull &&
+            docker compose -f docker-compose.app.yml --env-file .env up -d --remove-orphans &&
+            docker compose -f docker-compose.app.yml ps &&
+            docker image prune -f >/dev/null 2>&1 || true
+          "
+
+      - name: Healthcheck
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          URL: ${{ vars.PROD_URL || 'https://jcardapp.duckdns.org' }}
+        run: |
+          echo "Aguardando $URL ..."
+          for i in $(seq 1 18); do
+            if curl -fsS "$URL/q/health" >/dev/null 2>&1; then echo "✅ No ar."; exit 0; fi
+            sleep 10
+          done
+          echo "::error title=Healthcheck::App não respondeu em ~3min"
+          exit 1

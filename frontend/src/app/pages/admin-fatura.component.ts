@@ -1,0 +1,271 @@
+import { CurrencyPipe, DatePipe } from '@angular/common';
+import { Component, Input, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { forkJoin } from 'rxjs';
+import { ApiService } from '../core/api.service';
+import { ToastService } from '../core/toast.service';
+import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from '../core/models';
+
+/** Conciliação: conflitos para arbitrar, fechamento e confirmação de pagamentos. */
+@Component({
+  standalone: true,
+  imports: [FormsModule, CurrencyPipe, DatePipe],
+  template: `
+    @if (detalhe(); as d) {
+      <h1>Conciliação · {{ d.fatura.competencia | date: 'MM/yyyy' }}</h1>
+
+      <article class="cartao">
+        <div class="linha">
+          <div>
+            <div>Total da fatura</div>
+            <strong style="font-size:1.3rem">{{ d.fatura.valorTotal | currency: 'BRL' }}</strong>
+          </div>
+          <div>
+            <div>Soma lida do PDF</div>
+            <strong>{{ d.fatura.valorLancado | currency: 'BRL' }}</strong>
+          </div>
+          <div>
+            <div>Diferença</div>
+            <strong [style.color]="d.fatura.divergencia === 0 ? 'var(--ok)' : 'var(--erro)'">
+              {{ d.fatura.divergencia | currency: 'BRL' }}
+            </strong>
+          </div>
+          <span class="tag">{{ d.fatura.status }}</span>
+        </div>
+      </article>
+
+      @if (d.fatura.status === 'DIVERGENTE') {
+        <div class="aviso erro">
+          <strong>A leitura não fecha com o total impresso.</strong>
+          O parser perdeu ou duplicou linha. Corrija as regexes
+          (<code>jcard.parser.itau.*</code>) e reprocesse — a fatura não avança assim,
+          de propósito: ratear em cima de leitura errada cobraria valor errado de alguém.
+          <div style="margin-top:0.5rem">
+            <button type="button" (click)="reprocessar()">Reprocessar do texto guardado</button>
+          </div>
+        </div>
+      }
+
+      @if (conflitos().length > 0) {
+        <h2>Conflitos para decidir ({{ conflitos().length }})</h2>
+        <div class="cartao">
+          @for (l of conflitos(); track l.id) {
+            <div class="lancamento">
+              <div>
+                <div class="desc">{{ limpa(l) }}</div>
+                <div class="meta">
+                  {{ l.dataCompra | date: 'dd/MM' }} · disputam:
+                  {{ (l.disputantes ?? []).join(', ') }}
+                </div>
+              </div>
+              <div style="text-align:right">
+                <div class="valor">{{ l.valor | currency: 'BRL' }}</div>
+                <select [ngModel]="escolha[l.id] ?? null"
+                        (ngModelChange)="escolha[l.id] = $event"
+                        [attr.aria-label]="'Quem fica com ' + l.descricao"
+                        name="vencedor{{ l.id }}">
+                  <option [ngValue]="null">Escolha quem fica…</option>
+                  @for (u of utilizadores(); track u.id) {
+                    <option [ngValue]="u.id">{{ u.nome }}</option>
+                  }
+                </select>
+                <button type="button" [disabled]="!escolha[l.id]" (click)="arbitrar(l)">
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+
+      <h2>Acertos por pessoa</h2>
+      @if (d.acertos.length === 0) {
+        <p class="vazio">Ainda sem acertos calculados.</p>
+      } @else {
+        <div class="rolavel">
+          <table>
+            <caption class="sub">A soma reproduz o total da fatura.</caption>
+            <thead>
+              <tr><th>Pessoa</th><th class="num">Valor</th><th>Situação</th><th>Ação</th></tr>
+            </thead>
+            <tbody>
+              @for (a of d.acertos; track a.id) {
+                <tr>
+                  <td>{{ a.usuarioNome }}</td>
+                  <td class="num">{{ a.valorDevido | currency: 'BRL' }}</td>
+                  <td>
+                    <span class="tag" [class.ok]="a.status === 'CONFIRMADO'"
+                          [class.alerta]="a.status === 'INFORMADO'">
+                      {{ rotuloAcerto(a.status) }}
+                    </span>
+                  </td>
+                  <td>
+                    @if (a.status !== 'CONFIRMADO') {
+                      <button type="button" (click)="confirmar(a)">Recebi</button>
+                    } @else {
+                      <button type="button" class="btn-secundario" (click)="reabrir(a)">
+                        Reabrir
+                      </button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Total</th>
+                <th class="num">{{ somaAcertos() | currency: 'BRL' }}</th>
+                <th colspan="2">
+                  @if (somaAcertos() === d.fatura.valorTotal) {
+                    <span class="tag ok">bate com a fatura</span>
+                  } @else {
+                    <span class="tag erro">não bate</span>
+                  }
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      }
+
+      <h2>Fechamento</h2>
+      <div class="cartao">
+        <p class="meta">
+          Conciliar atribui ao titular tudo que ficou sem dono e congela o rateio.
+          Fechar exige que todos os pagamentos estejam confirmados.
+        </p>
+        <div class="linha">
+          <button type="button"
+                  [disabled]="d.fatura.status !== 'EM_AVALIACAO' || conflitos().length > 0"
+                  (click)="conciliar()">
+            Conciliar ({{ d.fatura.noPool }} sem dono → titular)
+          </button>
+          <button type="button" class="btn-secundario"
+                  [disabled]="d.fatura.status !== 'CONCILIADA'" (click)="fechar()">
+            Fechar fatura
+          </button>
+        </div>
+        @if (conflitos().length > 0) {
+          <p class="meta" style="color:var(--erro)">
+            Resolva os conflitos antes de conciliar.
+          </p>
+        }
+      </div>
+
+      <h2>Todos os lançamentos ({{ d.lancamentos.length }})</h2>
+      <div class="rolavel">
+        <table>
+          <thead>
+            <tr><th>Data</th><th>Descrição</th><th>Cartão</th>
+                <th>Responsável</th><th class="num">Valor</th></tr>
+          </thead>
+          <tbody>
+            @for (l of d.lancamentos; track l.id) {
+              <tr>
+                <td>{{ l.dataCompra | date: 'dd/MM' }}</td>
+                <td>
+                  {{ limpa(l) }}
+                  @if (l.parcelaTotal) {
+                    <span class="tag">{{ l.parcelaAtual }}/{{ l.parcelaTotal }}</span>
+                  }
+                </td>
+                <td>{{ l.final4 ?? '—' }}</td>
+                <td>
+                  {{ l.responsavelNome ?? '—' }}
+                  @if (l.origemAtribuicao === 'HERDADA_PARCELA') {
+                    <span class="tag info">herdada</span>
+                  }
+                </td>
+                <td class="num">{{ l.valor | currency: 'BRL' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else {
+      <p class="vazio">Carregando…</p>
+    }
+  `,
+})
+export class AdminFaturaComponent {
+  private api = inject(ApiService);
+  private toast = inject(ToastService);
+
+  detalhe = signal<DetalheFatura | null>(null);
+  conflitos = signal<Lancamento[]>([]);
+  utilizadores = signal<Usuario[]>([]);
+  escolha: Record<number, number | null> = {};
+
+  private faturaId = 0;
+
+  @Input() set id(valor: string) {
+    this.faturaId = Number(valor);
+    this.carregar();
+  }
+
+  somaAcertos(): number {
+    return (this.detalhe()?.acertos ?? []).reduce((s, a) => s + a.valorDevido, 0);
+  }
+
+  limpa(l: Lancamento): string {
+    return descricaoSemParcela(l);
+  }
+
+  rotuloAcerto(s: string): string {
+    return { ABERTO: 'a pagar', INFORMADO: 'informou que pagou', CONFIRMADO: 'recebido' }[s] ?? s;
+  }
+
+  arbitrar(l: Lancamento): void {
+    const vencedor = this.escolha[l.id];
+    if (!vencedor) {
+      return;
+    }
+    this.api.arbitrar(l.id, vencedor).subscribe({
+      next: () => { this.toast.ok('Conflito resolvido.'); this.carregar(); },
+    });
+  }
+
+  conciliar(): void {
+    this.api.conciliar(this.faturaId).subscribe({
+      next: () => { this.toast.ok('Fatura conciliada. As contas fecham com o total.'); this.carregar(); },
+    });
+  }
+
+  fechar(): void {
+    this.api.fechar(this.faturaId).subscribe({
+      next: () => { this.toast.ok('Fatura fechada.'); this.carregar(); },
+    });
+  }
+
+  reprocessar(): void {
+    this.api.reprocessarFatura(this.faturaId).subscribe({
+      next: () => { this.toast.ok('Fatura reprocessada.'); this.carregar(); },
+    });
+  }
+
+  confirmar(a: Acerto): void {
+    this.api.confirmarPagamento(a.id).subscribe({
+      next: () => { this.toast.ok(`Pagamento de ${a.usuarioNome} confirmado.`); this.carregar(); },
+    });
+  }
+
+  reabrir(a: Acerto): void {
+    this.api.reabrirAcerto(a.id).subscribe({
+      next: () => { this.toast.ok('Acerto reaberto.'); this.carregar(); },
+    });
+  }
+
+  private carregar(): void {
+    forkJoin({
+      detalhe: this.api.fatura(this.faturaId),
+      conflitos: this.api.conflitos(this.faturaId),
+      utilizadores: this.api.utilizadores(),
+    }).subscribe({
+      next: (r) => {
+        this.detalhe.set(r.detalhe);
+        this.conflitos.set(r.conflitos);
+        this.utilizadores.set(r.utilizadores);
+      },
+    });
+  }
+}

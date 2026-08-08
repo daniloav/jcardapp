@@ -34,6 +34,7 @@ import java.util.List;
 public class CartaoResource {
 
     @GET
+    @Transactional
     public List<Responses.CartaoResponse> listar() {
         return Cartao.<Cartao>listAll(io.quarkus.panache.common.Sort.by("apelido")).stream()
                 .map(Responses.CartaoResponse::de).toList();

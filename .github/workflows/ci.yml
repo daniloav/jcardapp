@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------- build e testes ------
+  backend:
+    name: Backend · build & testes
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: jcard
+          POSTGRES_PASSWORD: jcard
+          POSTGRES_DB: jcard_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jcard -d jcard_test"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Gerar chaves JWT (não versionadas)
+        run: bash scripts/gen-jwt-keys.sh
+      - name: Build e testes
+        working-directory: backend
+        # Cobre as invariantes de conciliação, a herança de parcela e o parser
+        # do Itaú contra o fixture anonimizado.
+        run: mvn -B -ntp verify
+
+  frontend:
+    name: Frontend · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar e compilar
+        working-directory: frontend
+        run: |
+          npm ci
+          npx ng build
+
+  # --------------------------------------------- migrations em Postgres ---
+  migrations:
+    name: Migrations · app real contra Postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: jcard
+          POSTGRES_PASSWORD: jcard
+          POSTGRES_DB: jcard
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jcard -d jcard"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - run: bash scripts/gen-jwt-keys.sh
+      - name: Empacotar
+        working-directory: backend
+        run: mvn -B -ntp package -DskipTests
+      - name: Subir o app e validar Flyway + startup
+        env:
+          QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://localhost:5432/jcard
+          QUARKUS_DATASOURCE_USERNAME: jcard
+          QUARKUS_DATASOURCE_PASSWORD: jcard
+          JCARD_NOTIF_ENABLED: 'false'
+        run: |
+          java -jar backend/target/quarkus-app/quarkus-run.jar > app.log 2>&1 &
+          PID=$!
+          ok=""
+          for i in $(seq 1 40); do
+            if curl -fsS http://localhost:8080/q/health 2>/dev/null | grep -q '"status": "UP"'; then
+              ok=1; break
+            fi
+            kill -0 "$PID" 2>/dev/null || { echo "o app encerrou antes de ficar UP"; break; }
+            sleep 3
+          done
+          kill "$PID" 2>/dev/null || true
+          if [ -z "$ok" ]; then
+            echo "::error title=Migrations::App não subiu — migration quebrada ou entidade divergente do schema"
+            tail -n 60 app.log
+            exit 1
+          fi
+          echo "✅ Flyway aplicou e o app subiu."
+          grep -iE "Migrating schema|Successfully applied|Installed features" app.log | tail -n 20 || true
+
+  # --------------------------------------------------------- segurança ---
+  sast:
+    name: SAST · Semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Análise estática
+        run: |
+          semgrep scan \
+            --config p/security-audit --config p/secrets \
+            --config p/java --config p/typescript --config p/dockerfile \
+            --sarif --output semgrep.sarif --error --metrics=off
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: semgrep-sarif, path: semgrep.sarif }
+
+  trivy:
+    name: Dependências e IaC · Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pré-baixar imagem (com retry)
+        run: for i in 1 2 3; do docker pull aquasec/trivy:latest && break || sleep 10; done
+      - name: Relatório HIGH/CRITICAL (não bloqueia)
+        run: |
+          set -o pipefail
+          docker run --rm -v "$PWD:/repo" aquasec/trivy:latest fs \
+            --scanners vuln,secret,misconfig --offline-scan \
+            --severity HIGH,CRITICAL --no-progress --format table /repo | tee trivy.txt
+      - name: Gate — falha em CRITICAL
+        run: |
+          docker run --rm -v "$PWD:/repo" aquasec/trivy:latest fs \
+            --scanners vuln,secret,misconfig --offline-scan \
+            --severity CRITICAL --no-progress --exit-code 1 /repo
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: trivy-report, path: trivy.txt }
+
+  gitleaks:
+    name: Segredos · gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: for i in 1 2 3; do docker pull zricethezav/gitleaks:latest && break || sleep 10; done
+      - name: Procurar segredos
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --no-git --source /repo --redact --verbose --exit-code 1

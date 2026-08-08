@@ -1,0 +1,278 @@
+/* JcardApp — estilos globais. Sem framework: o app tem poucas telas e o
+   bundle no celular importa mais que a conveniência. */
+
+:root {
+  --azul: #0f2f3d;
+  --azul-claro: #1b5670;
+  --acento: #14b8a6;
+  --fundo: #f4f6f8;
+  --superficie: #ffffff;
+  --texto: #1c2b33;
+  --texto-suave: #5a6c78;
+  --borda: #dde3e8;
+  --erro: #b3261e;
+  --ok: #1b7f4b;
+  --alerta: #9a6700;
+  --raio: 10px;
+  --sombra: 0 1px 3px rgba(16, 40, 52, 0.1);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------- layout -- */
+
+.topo {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  /* safe-area: no iPhone em modo standalone o topo fica sob o notch */
+  padding-top: calc(0.75rem + env(safe-area-inset-top));
+  background: var(--azul);
+  color: #fff;
+
+  .marca {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #fff;
+    text-decoration: none;
+  }
+
+  nav {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+    flex: 1;
+
+    a {
+      color: #cfe3ec;
+      text-decoration: none;
+      padding: 0.35rem 0.7rem;
+      border-radius: var(--raio);
+      font-size: 0.95rem;
+
+      &:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+      &.ativo { background: var(--azul-claro); color: #fff; }
+    }
+  }
+
+  .usuario {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    .nome { color: #cfe3ec; }
+  }
+}
+
+main {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem;
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+}
+
+h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
+.sub { color: var(--texto-suave); margin: 0 0 1.25rem; }
+
+/* ------------------------------------------------------------- cartões -- */
+
+.cartao {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.linha {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.vazio {
+  text-align: center;
+  color: var(--texto-suave);
+  padding: 2rem 1rem;
+}
+
+/* ---------------------------------------------------------- lançamento -- */
+
+.lancamento {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--borda);
+
+  &:last-child { border-bottom: 0; }
+
+  .desc { font-weight: 600; word-break: break-word; }
+  .meta { color: var(--texto-suave); font-size: 0.85rem; }
+  .valor { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  .valor.credito { color: var(--ok); }
+}
+
+/* ------------------------------------------------------------ etiquetas -- */
+
+.tag {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #e8eef2;
+  color: var(--texto-suave);
+
+  &.ok { background: #dff2e6; color: var(--ok); }
+  &.alerta { background: #fdf3d7; color: var(--alerta); }
+  &.erro { background: #fbe3e1; color: var(--erro); }
+  &.info { background: #d9f2ef; color: #0d6e66; }
+}
+
+/* -------------------------------------------------------------- botões -- */
+
+button, .btn {
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--raio);
+  border: 1px solid transparent;
+  padding: 0.5rem 0.9rem;
+  background: var(--azul);
+  color: #fff;
+  font-weight: 600;
+
+  &:hover:not(:disabled) { background: var(--azul-claro); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  /* foco visível: o app é auditado por WCAG 2.1 AA no CI */
+  &:focus-visible { outline: 3px solid var(--acento); outline-offset: 2px; }
+}
+
+.btn-secundario {
+  background: var(--superficie);
+  color: var(--texto);
+  border-color: var(--borda);
+  &:hover:not(:disabled) { background: #eef2f5; }
+}
+
+.btn-perigo { background: var(--erro); &:hover:not(:disabled) { background: #8c1c16; } }
+
+.btn-texto {
+  background: none;
+  color: inherit;
+  border: 0;
+  text-decoration: underline;
+  padding: 0.25rem;
+  font-weight: 500;
+}
+
+/* ----------------------------------------------------------- formulário -- */
+
+label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+input, select, textarea {
+  font: inherit;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  background: var(--superficie);
+  color: var(--texto);
+  font-weight: 400;
+
+  &:focus-visible { outline: 3px solid var(--acento); outline-offset: 1px; }
+}
+
+input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
+
+fieldset { border: 1px solid var(--borda); border-radius: var(--raio); padding: 1rem; }
+legend { font-weight: 700; padding: 0 0.4rem; }
+
+/* --------------------------------------------------------------- tabela -- */
+
+.rolavel { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--superficie);
+  font-size: 0.95rem;
+
+  th, td { padding: 0.6rem 0.7rem; text-align: left; border-bottom: 1px solid var(--borda); }
+  th { background: #eef2f5; font-size: 0.85rem; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+}
+
+/* -------------------------------------------------------------- toasts -- */
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 100;
+  width: min(92vw, 460px);
+}
+
+.toast {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+  background: var(--texto);
+  color: #fff;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--raio);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+
+  &.erro { background: var(--erro); }
+
+  button { background: none; border: 0; color: inherit; font-size: 1.2rem; padding: 0 0.2rem; }
+}
+
+/* --------------------------------------------------------------- avisos -- */
+
+.aviso {
+  border-left: 4px solid var(--alerta);
+  background: #fdf8e8;
+  padding: 0.75rem 1rem;
+  border-radius: var(--raio);
+  margin-bottom: 1rem;
+
+  &.erro { border-left-color: var(--erro); background: #fdeceb; }
+  &.info { border-left-color: var(--acento); background: #e6f7f5; }
+}
+
+.centro { max-width: 380px; margin: 3rem auto; }
+
+@media (max-width: 600px) {
+  .topo { gap: 0.5rem; }
+  .topo nav { order: 3; width: 100%; }
+  main { padding: 1rem 0.75rem; }
+}

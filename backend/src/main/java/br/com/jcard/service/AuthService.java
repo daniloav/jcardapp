@@ -53,8 +53,19 @@ public class AuthService {
         return u;
     }
 
+    /**
+     * Troca a senha e devolve o usuário já atualizado.
+     *
+     * <p>Recebe o <b>id</b>, não a entidade: quem chama tem o usuário resolvido
+     * do JWT, fora de transação, e persistir um objeto destacado estoura em
+     * runtime. Recarregar aqui dentro mantém a operação segura de qualquer origem.
+     */
     @Transactional
-    public void trocarSenha(Usuario u, String senhaAtual, String senhaNova) {
+    public Usuario trocarSenha(Long usuarioId, String senhaAtual, String senhaNova) {
+        Usuario u = Usuario.findById(usuarioId);
+        if (u == null || !u.ativo) {
+            throw new WebApplicationException("Usuário inválido.", 401);
+        }
         if (!BcryptUtil.matches(senhaAtual, u.senhaHash)) {
             throw new WebApplicationException("Senha atual incorreta.", 400);
         }
@@ -66,6 +77,7 @@ public class AuthService {
         u.precisaTrocarSenha = false;
         u.persist();
         auditoria.registrar(u, AcaoAuditoria.ATUALIZAR, "Usuario", u.id, "trocou a senha");
+        return u;
     }
 
     public void validarForca(String senha) {

@@ -15,6 +15,7 @@ import br.com.jcard.service.FaturaImportService;
 import br.com.jcard.service.ReivindicacaoService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -34,7 +35,14 @@ import java.util.Map;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
-/** Faturas: importação, acompanhamento, conciliação e a visão do utilizador. */
+/**
+ * Faturas: importação, acompanhamento, conciliação e a visão do utilizador.
+ *
+ * <p>Os métodos são {@code @Transactional} porque montam DTO a partir de
+ * entidade: sem a sessão aberta durante o mapeamento, tocar uma associação lazy
+ * (por exemplo {@code acerto.fatura.competencia}) estoura com
+ * {@code LazyInitializationException} depois que a transação do serviço fechou.
+ */
 @Path("/api/faturas")
 @Produces(MediaType.APPLICATION_JSON)
 public class FaturaResource {
@@ -66,6 +74,7 @@ public class FaturaResource {
     @POST
     @RolesAllowed(TokenService.ADMIN)
     @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Transactional
     public Responses.FaturaResponse importar(@RestForm("arquivo") FileUpload arquivo,
                                              @RestForm String competencia,
                                              @RestForm String valorTotal) {
@@ -91,6 +100,7 @@ public class FaturaResource {
     @POST
     @Path("/{id}/reprocessar")
     @RolesAllowed(TokenService.ADMIN)
+    @Transactional
     public Responses.FaturaResponse reprocessar(@PathParam("id") Long id) {
         return resumo(importacao.reprocessar(buscar(id), logado.get()));
     }
@@ -98,6 +108,7 @@ public class FaturaResource {
     // ------------------------------------------------------------- consulta --
 
     @GET
+    @Transactional
     public List<Responses.FaturaResponse> listar() {
         logado.exigirSenhaTrocada();
         return Fatura.recentes().stream().map(this::resumo).toList();
@@ -107,6 +118,7 @@ public class FaturaResource {
     @GET
     @Path("/{id}")
     @RolesAllowed(TokenService.ADMIN)
+    @Transactional
     public Map<String, Object> detalhe(@PathParam("id") Long id) {
         Fatura f = buscar(id);
         Usuario eu = logado.get();
@@ -126,6 +138,7 @@ public class FaturaResource {
      */
     @GET
     @Path("/{id}/minhas-contas")
+    @Transactional
     public Responses.MinhasContas minhasContas(@PathParam("id") Long id) {
         Fatura f = buscar(id);
         Usuario eu = logado.exigirSenhaTrocada();
@@ -151,6 +164,7 @@ public class FaturaResource {
     @GET
     @Path("/{id}/conflitos")
     @RolesAllowed(TokenService.ADMIN)
+    @Transactional
     public List<Responses.LancamentoResponse> conflitos(@PathParam("id") Long id) {
         Usuario eu = logado.get();
         return reivindicacoes.conflitos(id).stream()
@@ -163,6 +177,7 @@ public class FaturaResource {
     @GET
     @Path("/{id}/acertos")
     @RolesAllowed(TokenService.ADMIN)
+    @Transactional
     public List<Responses.AcertoResponse> acertos(@PathParam("id") Long id) {
         return Acerto.daFatura(id).stream().map(Responses.AcertoResponse::de).toList();
     }
@@ -172,6 +187,7 @@ public class FaturaResource {
     @POST
     @Path("/{id}/conciliar")
     @RolesAllowed(TokenService.ADMIN)
+    @Transactional
     public Responses.FaturaResponse conciliar(@PathParam("id") Long id) {
         return resumo(conciliacao.conciliar(id, logado.get()));
     }
@@ -179,6 +195,7 @@ public class FaturaResource {
     @POST
     @Path("/{id}/fechar")
     @RolesAllowed(TokenService.ADMIN)
+    @Transactional
     public Responses.FaturaResponse fechar(@PathParam("id") Long id) {
         return resumo(conciliacao.fechar(id, logado.get()));
     }
@@ -189,6 +206,7 @@ public class FaturaResource {
     @POST
     @Path("/{id}/pagamento")
     @Consumes(MediaType.APPLICATION_JSON)
+    @Transactional
     public Responses.AcertoResponse informarPagamento(@PathParam("id") Long id,
                                                       Requests.InformarPagamento req) {
         Usuario eu = logado.exigirSenhaTrocada();
@@ -199,7 +217,6 @@ public class FaturaResource {
     @DELETE
     @Path("/{id}")
     @RolesAllowed(TokenService.ADMIN)
-    @jakarta.transaction.Transactional
     public void excluir(@PathParam("id") Long id) {
         Fatura f = buscar(id);
         if (f.status == br.com.jcard.model.StatusFatura.FECHADA) {

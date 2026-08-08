@@ -1,0 +1,29 @@
+# Imagem de runtime do backend — SEM estágio de build.
+#
+# O JAR é compilado no runner do GitHub Actions (amd64, nativo e rápido) e este
+# Dockerfile só empacota o resultado numa base arm64, porque as VMs são Ampere
+# A1 (aarch64). Bytecode Java é portável: compilar sob emulação QEMU só custaria
+# tempo. Ver .github/workflows/cd.yml e docs/CICD.md.
+#
+# Espera que `mvn package` já tenha rodado (target/quarkus-app existe).
+FROM eclipse-temurin:17-jre
+
+WORKDIR /app
+
+# A ordem segue a estabilidade das camadas: libs mudam pouco, app muda sempre.
+COPY target/quarkus-app/lib/     ./lib/
+COPY target/quarkus-app/*.jar    ./
+COPY target/quarkus-app/app/     ./app/
+COPY target/quarkus-app/quarkus/ ./quarkus/
+
+RUN groupadd --system --gid 1001 appuser \
+ && useradd --system --uid 1001 --gid appuser appuser \
+ && chown -R appuser:appuser /app
+USER 1001
+
+EXPOSE 8080
+
+# MaxRAMPercentage em vez de -Xmx: o heap acompanha o mem_limit do compose sem
+# precisar mexer aqui. G1 vale a pena porque a A1 tem 2 vCPUs (a VM do EBD, com
+# 1 vCPU, usava SerialGC).
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=70.0", "-XX:+UseG1GC", "-jar", "quarkus-run.jar"]

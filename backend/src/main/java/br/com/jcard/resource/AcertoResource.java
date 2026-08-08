@@ -7,6 +7,7 @@ import br.com.jcard.security.UsuarioLogado;
 import br.com.jcard.service.AcertoService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -29,6 +30,7 @@ public class AcertoResource {
     /** Histórico do próprio utilizador: quanto deveu e o que já foi confirmado. */
     @GET
     @Path("/me/acertos")
+    @Transactional
     public List<Responses.AcertoResponse> meus() {
         return Acerto.doUsuario(logado.exigirSenhaTrocada().id).stream()
                 .map(Responses.AcertoResponse::de).toList();
@@ -37,6 +39,7 @@ public class AcertoResource {
     @POST
     @Path("/acertos/{id}/confirmar")
     @RolesAllowed(TokenService.ADMIN)
+    @Transactional
     public Responses.AcertoResponse confirmar(@PathParam("id") Long id) {
         return Responses.AcertoResponse.de(servico.confirmarPagamento(id, logado.get()));
     }
@@ -44,6 +47,7 @@ public class AcertoResource {
     @POST
     @Path("/acertos/{id}/reabrir")
     @RolesAllowed(TokenService.ADMIN)
+    @Transactional
     public Responses.AcertoResponse reabrir(@PathParam("id") Long id) {
         return Responses.AcertoResponse.de(servico.reabrir(id, logado.get()));
     }

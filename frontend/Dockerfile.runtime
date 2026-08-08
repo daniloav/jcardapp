@@ -1,0 +1,14 @@
+# Imagem de runtime do frontend — SEM estágio de build.
+#
+# O bundle é gerado no runner (`ng build`) e aqui só entra no nginx arm64.
+# Mesmo motivo do backend: evitar build sob emulação. Ver docs/CICD.md.
+#
+# Espera que `npm ci && npx ng build` já tenha rodado.
+FROM nginxinc/nginx-unprivileged:1.27-alpine
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY dist/jcard-frontend/browser /usr/share/nginx/html
+
+USER 101
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]

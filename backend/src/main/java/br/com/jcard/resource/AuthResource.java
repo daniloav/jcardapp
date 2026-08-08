@@ -53,8 +53,7 @@ public class AuthResource {
     @PUT
     @Path("/me/senha")
     public Responses.Login trocarSenha(@Valid Requests.TrocarSenha req) {
-        Usuario u = logado.get();
-        auth.trocarSenha(u, req.senhaAtual(), req.senhaNova());
+        Usuario u = auth.trocarSenha(logado.get().id, req.senhaAtual(), req.senhaNova());
         // Token novo: o antigo carrega trocarSenha=true e barraria o usuário.
         return Responses.Login.de(tokens.gerar(u), u);
     }

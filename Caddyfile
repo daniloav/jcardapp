@@ -1,0 +1,18 @@
+# HTTPS automático (Let's Encrypt) para o domínio DuckDNS.
+# O Caddy provisiona e renova o certificado sozinho e redireciona HTTP → HTTPS.
+jcardapp.duckdns.org {
+    encode gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        -Server
+    }
+
+    # O front é servido pelo nginx, que também faz o proxy de /api para o backend
+    # (same-origin, por isso o CORS fica desligado no Quarkus).
+    reverse_proxy frontend:8080
+}

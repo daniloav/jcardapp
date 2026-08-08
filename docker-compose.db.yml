@@ -1,0 +1,40 @@
+# Postgres dedicado — roda SÓ na VM jcard-db.
+# Uso:  docker compose -f docker-compose.db.yml --env-file .env up -d
+#
+# O banco é vinculado ao IP PRIVADO (JCARD_DB_BIND_IP), nunca ao público. A
+# porta 5432 ainda é restrita ao IP da jcard-app na Security List e no iptables:
+# três camadas, porque aqui moram lançamentos e valores de gente real.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: jcard-postgres
+    restart: unless-stopped
+    # A VM tem 12 GB, então o banco pode respirar de verdade.
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=1GB"
+      - "-c"
+      - "effective_cache_size=3GB"
+      - "-c"
+      - "max_connections=50"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "listen_addresses=*"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jcard}
+      POSTGRES_USER: ${POSTGRES_USER:-jcard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - jcard_pgdata:/var/lib/postgresql/data
+    ports:
+      - "${JCARD_DB_BIND_IP:-127.0.0.1}:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jcard} -d ${POSTGRES_DB:-jcard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  jcard_pgdata:

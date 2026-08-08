@@ -8,6 +8,7 @@ import br.com.jcard.security.UsuarioLogado;
 import br.com.jcard.service.UsuarioService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -34,17 +35,20 @@ public class UsuarioResource {
     UsuarioLogado logado;
 
     @GET
+    @Transactional
     public List<Responses.Usuario> listar() {
         return servico.listar().stream().map(Responses.Usuario::de).toList();
     }
 
     @POST
+    @Transactional
     public Responses.Usuario criar(@Valid UsuarioRequest req) {
         return Responses.Usuario.de(servico.criar(req, logado.get()));
     }
 
     @PUT
     @Path("/{id}")
+    @Transactional
     public Responses.Usuario atualizar(@PathParam("id") Long id, @Valid UsuarioRequest req) {
         return Responses.Usuario.de(servico.atualizar(id, req, logado.get()));
     }
@@ -64,6 +68,7 @@ public class UsuarioResource {
     /** Lista enxuta para os seletores de arbitragem e dono padrão de cartão. */
     @GET
     @Path("/utilizadores")
+    @Transactional
     public List<Responses.Usuario> utilizadores() {
         return Usuario.utilizadoresAtivos().stream().map(Responses.Usuario::de).toList();
     }

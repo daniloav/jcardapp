@@ -1,0 +1,64 @@
+# Stack da VM de APP (jcard-app): caddy + frontend + backend.
+# O Postgres roda na VM jcard-db — defina JCARD_DB_HOST no .env com o IP PRIVADO dela.
+# Uso na VM:  docker compose -f docker-compose.app.yml --env-file .env up -d
+services:
+  backend:
+    image: ghcr.io/daniloav/jcard-backend:${JCARD_IMAGE_TAG:-latest}
+    container_name: jcard-backend
+    restart: unless-stopped
+    # A A1 tem 12 GB; 2 GB dá folga para o heap sem competir com o Caddy/nginx.
+    mem_limit: 2g
+    volumes:
+      # Chaves JWT gravadas pelo CD a partir dos secrets: a imagem fica sem
+      # segredo e os tokens sobrevivem ao deploy.
+      - ./keys:/keys:ro
+    environment:
+      JCARD_JWT_PUBLIC_LOCATION: /keys/publicKey.pem
+      JCARD_JWT_PRIVATE_LOCATION: /keys/privateKey.pem
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://${JCARD_DB_HOST:?defina JCARD_DB_HOST no .env}:${JCARD_DB_PORT:-5432}/${POSTGRES_DB:-jcard}
+      QUARKUS_DATASOURCE_USERNAME: ${POSTGRES_USER:-jcard}
+      QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      JCARD_ADMIN_NOME: ${JCARD_ADMIN_NOME:-Titular do cartao}
+      JCARD_ADMIN_LOGIN: ${JCARD_ADMIN_LOGIN:-admin}
+      JCARD_ADMIN_EMAIL: ${JCARD_ADMIN_EMAIL:-admin@jcardapp.local}
+      JCARD_ADMIN_SENHA: ${JCARD_ADMIN_SENHA:?defina JCARD_ADMIN_SENHA no .env}
+      JCARD_SENHA_PADRAO: ${JCARD_SENHA_PADRAO:-12345678}
+      JCARD_APP_URL: ${JCARD_APP_URL:-https://jcardapp.duckdns.org}
+      JCARD_NOTIF_ENABLED: ${JCARD_NOTIF_ENABLED:-false}
+      JCARD_MAIL_FROM: ${JCARD_MAIL_FROM:-}
+      JCARD_SMTP_HOST: ${JCARD_SMTP_HOST:-smtp.gmail.com}
+      JCARD_SMTP_PORT: ${JCARD_SMTP_PORT:-587}
+      JCARD_SMTP_USER: ${JCARD_SMTP_USER:-}
+      JCARD_SMTP_PASS: ${JCARD_SMTP_PASS:-}
+    networks: [jcard-net]
+
+  frontend:
+    image: ghcr.io/daniloav/jcard-frontend:${JCARD_IMAGE_TAG:-latest}
+    container_name: jcard-frontend
+    restart: unless-stopped
+    mem_limit: 128m
+    depends_on: [backend]
+    networks: [jcard-net]
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: jcard-caddy
+    restart: unless-stopped
+    mem_limit: 128m
+    depends_on: [frontend]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [jcard-net]
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  jcard-net:
+    driver: bridge

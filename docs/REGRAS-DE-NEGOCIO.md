@@ -1,0 +1,177 @@
+# Regras de negócio
+
+Catálogo do que o app garante. Cada regra aponta para onde ela vive no código e,
+quando existe, para o teste que a protege (`RegrasDeNegocioTest`).
+
+## 1. As contas sempre batem
+
+### 1.1 A leitura tem de reproduzir o total impresso
+
+`Σ lancamento.valor == fatura.valorTotal`
+
+Se não bate, a fatura vai para **`DIVERGENTE`**, ninguém é notificado e nada
+avança. É deliberado: uma linha perdida pelo parser significa que o rateio seria
+feito sobre dado incompleto, cobrando errado de alguém.
+
+`ConciliacaoService.validarLeitura` · testes `somaBateLiberaAvaliacao`,
+`centavoFaltandoTrava`, `divergenteNaoConcilia`
+
+### 1.2 O rateio tem de reproduzir o total
+
+`Σ acerto.valorDevido == fatura.valorTotal`
+
+Na conciliação, tudo que ficou sem dono é atribuído ao **titular**. Se a soma
+ainda assim não fechar, a transação é abortada — nada é gravado.
+
+`ConciliacaoService.conciliar` · teste `sobraVaiParaOTitular`
+
+### 1.3 Créditos entram negativos
+
+Estorno e pagamento reduzem o total. O parser inverte o sinal mesmo quando o PDF
+imprime sem ele, senão a invariante 1.1 nunca fecharia.
+
+`ItauFaturaParser.montar` · testes `estornoAbateDaConta`, `classificacao`
+
+## 2. Parcelamento gruda
+
+### 2.1 Assumir uma parcela vale para as seguintes
+
+Aceitar um lançamento com `parcelaTotal > 1` cria um `CompromissoParcelado`. Nas
+próximas importações, as parcelas seguintes já nascem atribuídas com origem
+`HERDADA_PARCELA` — a pessoa não precisa reivindicar todo mês.
+
+`AtribuicaoService.registrarCompromisso` · teste `parcelaSeguinteHerdaDono`
+
+### 2.2 O compromisso se encerra na última parcela
+
+Sem isso ele seguiria capturando compras futuras parecidas na mesma loja.
+
+`CompromissoParcelado.registrarParcela` · teste `compromissoEncerraNoFim`
+
+### 2.3 Valor destoante não atribui
+
+A chave de casamento ignora o valor (R$ 100 em 3x sai 33,34 + 33,33 + 33,33). A
+proteção contra colisão é a tolerância de **R$ 1,00 ou 5%**, o que for maior:
+fora disso o lançamento fica no pool para conferência.
+
+`AtribuicaoService.valorCompativel` · testes `valorDestoanteNaoAtribui`,
+`arredondamentoDeParcelaAindaCasa`
+
+### 2.4 Desistir desfaz o compromisso
+
+Só quando quem desiste é o dono do lançamento que **originou** o compromisso.
+
+`AtribuicaoService.encerrarCompromisso`
+
+## 3. Quem fica com o lançamento
+
+### 3.1 Precedência na importação
+
+1. `CompromissoParcelado` ativo casando a chave → `HERDADA_PARCELA`
+2. `Cartao.donoPadrao` do cartão adicional → `REGRA_CARTAO`
+3. nada casou → **pool**, disponível para reivindicação
+
+Na dúvida, pool. Atribuir errado gera cobrança indevida e desgaste entre pessoas
+da mesma família; pedir confirmação custa um toque.
+
+`AtribuicaoService.aplicar`
+
+### 3.2 Um pretendente leva na hora
+
+O caso comum não precisa de burocracia: se só uma pessoa reivindica, o lançamento
+é dela imediatamente.
+
+`ReivindicacaoService.resolver` · teste `desistirLiberaOOutro`
+
+### 3.3 Dois pretendentes devolvem ao pool
+
+Assim que uma segunda pessoa reivindica, o lançamento **sai** de quem estava com
+ele e ninguém fica com ele até o admin arbitrar. "Quem chegou primeiro" nunca
+decide uma cobrança contestada. O admin é notificado por e-mail.
+
+`ReivindicacaoService.reivindicar` · teste `segundaReivindicacaoViraConflito`
+
+### 3.4 O admin arbitra
+
+A decisão marca o vencedor como `ACEITA`, os demais como `REJEITADA`, atribui com
+origem `ADMIN` e cria o compromisso se for parcelado.
+
+`ReivindicacaoService.arbitrar` · teste `adminArbitra`
+
+### 3.5 Encargos são do titular
+
+`ENCARGO`, `ANUIDADE`, `IOF` e `PAGAMENTO` não são reivindicáveis: são custo do
+cartão, não compra de alguém.
+
+`TipoLancamento.reivindicavel` · teste `encargoNaoEReivindicavel`
+
+### 3.6 Só dá para mexer com a fatura em avaliação
+
+Fora de `EM_AVALIACAO`, reivindicar e desistir respondem 409.
+
+`ReivindicacaoService.buscarReivindicavel`
+
+## 4. Ciclo da fatura
+
+```
+IMPORTADA ──┬─► DIVERGENTE (soma não fecha; trava aqui)
+            └─► EM_AVALIACAO ──► CONCILIADA ──► FECHADA
+```
+
+- **EM_AVALIACAO** — utilizadores reivindicam; os acertos são recalculados a cada
+  mudança para que o "quanto devo" fique sempre atualizado.
+- **CONCILIADA** — o admin fechou o rateio; a sobra foi para o titular.
+- **FECHADA** — todos os acertos confirmados. Fatura fechada não é reprocessada
+  nem excluída: é o histórico do acerto.
+
+`ConciliacaoService.conciliar` / `.fechar`
+
+## 5. Quitação
+
+- O utilizador declara que pagou → `INFORMADO`.
+- O admin confirma o recebimento → `CONFIRMADO` (o app não tem como saber se o
+  PIX caiu; a confirmação é sempre humana).
+- Um acerto `CONFIRMADO` **não é recalculado** por mudanças posteriores — reabrir
+  apagaria a confirmação do admin. Divergência aí é caso de arbitragem manual.
+
+`AcertoService` · `ConciliacaoService.recalcularAcertos`
+
+## 6. Pessoas
+
+- **Papéis são flags**, não um campo único: o titular normalmente é `admin` **e**
+  `utilizador`, porque também gasta no próprio cartão.
+- Cadastro só pelo admin. Login derivado do nome (`nome.sobrenome`, com sufixo
+  numérico em colisão), senha padrão e **troca obrigatória no 1º acesso**.
+- Quem já tem lançamento ou acerto é **desativado**, nunca excluído — apagar
+  deixaria faturas passadas sem dono e quebraria a conciliação.
+- Tem de sobrar pelo menos um admin ativo; sem ele o app fica travado.
+- Login bloqueia por 15 min após 5 tentativas erradas.
+
+`UsuarioService` · `AuthService`
+
+## 7. E-mails
+
+Todos respeitam `jcard.notificacoes.enabled` e o opt-in do usuário, são enviados
+de forma **assíncrona** (EventBus) e **nunca lançam** — falha de e-mail não desfaz
+a operação que o disparou.
+
+| Quando | Para quem |
+|---|---|
+| Fatura importada (e não divergente) | todos os utilizadores ativos |
+| Lançamentos ainda sem dono (diário, 12h BRT) | utilizadores ativos |
+| Conflito para arbitrar | admins |
+| Pagamento confirmado | o utilizador |
+| Cadastro / reset de senha | o utilizador |
+
+`NotificacaoService` · `EmailDispatcher` · `LembreteService`
+
+## 8. Privacidade e auditoria
+
+- O utilizador vê **o pool e as próprias contas**. O que outra pessoa assumiu não
+  é exposto, e no pool o dono anterior é omitido para não influenciar a decisão.
+- O PDF da fatura **não é armazenado** — só o hash e o texto extraído.
+- Toda ação relevante vira registro em `auditoria`, com o nome desnormalizado
+  para sobreviver à exclusão do usuário.
+
+`FaturaResource.minhasContas` · `Responses.LancamentoResponse.anonimo` ·
+`AuditoriaService`

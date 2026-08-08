@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>JcardApp</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Separe as contas da fatura do cartão entre quem usou.">
+  <meta name="theme-color" content="#0f2f3d">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="JcardApp">
+</head>
+<body>
+  <app-root></app-root>
+  <script>
+    // O service worker só cacheia o app shell — nunca resposta de API.
+    // Ver src/sw.js: dado financeiro não pode ficar em cache do navegador.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () { /* offline não é erro */ });
+      });
+    }
+  </script>
+</body>
+</html>
