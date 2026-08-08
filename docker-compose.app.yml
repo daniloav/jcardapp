@@ -30,6 +30,13 @@ services:
       JCARD_SMTP_PORT: ${JCARD_SMTP_PORT:-587}
       JCARD_SMTP_USER: ${JCARD_SMTP_USER:-}
       JCARD_SMTP_PASS: ${JCARD_SMTP_PASS:-}
+      # Regexes do parser: repassadas para permitir calibrar um layout novo do
+      # Itaú mexendo só no .env + restart, sem build nem deploy. Vazias aqui
+      # significam "usa o padrão do application.properties".
+      JCARD_PARSER_ITAU_PORTADOR: ${JCARD_PARSER_ITAU_PORTADOR:-}
+      JCARD_PARSER_ITAU_LANCAMENTO: ${JCARD_PARSER_ITAU_LANCAMENTO:-}
+      JCARD_PARSER_ITAU_TOTAL: ${JCARD_PARSER_ITAU_TOTAL:-}
+      JCARD_PARSER_ITAU_VENCIMENTO: ${JCARD_PARSER_ITAU_VENCIMENTO:-}
     networks: [jcard-net]
 
   frontend:
