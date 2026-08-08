@@ -1,0 +1,32 @@
+# Java / Maven
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+playwright-report/
+test-results/
+
+# Segredos — NUNCA versionar
+.env
+*.pem
+!**/fixtures/*.pem
+keys/
+scripts/.oci-launch.env
+scripts/.deploy.env
+
+# Faturas reais (dado financeiro sensível)
+*.pdf
+!docs/**/*.pdf
+faturas/
+
+# SO / editores
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.log

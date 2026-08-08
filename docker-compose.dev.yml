@@ -1,0 +1,21 @@
+# Só o Postgres, para rodar o backend em modo dev (mvn quarkus:dev).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: jcard-postgres-dev
+    environment:
+      POSTGRES_DB: jcard
+      POSTGRES_USER: jcard
+      POSTGRES_PASSWORD: jcard
+    ports:
+      - "5432:5432"
+    volumes:
+      - jcard_pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jcard -d jcard"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  jcard_pgdata_dev:
