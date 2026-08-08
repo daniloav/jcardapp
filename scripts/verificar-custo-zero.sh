@@ -4,10 +4,11 @@
 #
 #   bash scripts/verificar-custo-zero.sh
 #
-# POR QUE ISTO EXISTE: a conta é Pay-As-You-Go, não Free Trial. A Oracle NÃO
-# bloqueia quando você passa do gratuito — ela deixa criar e cobra. Sem uma
-# checagem explícita, um shape um pouco maior ou um volume esquecido viram
-# fatura no fim do mês sem nenhum aviso.
+# POR QUE ISTO EXISTE: se a conta tiver upgrade, a Oracle NÃO bloqueia quando
+# você passa do gratuito — ela deixa criar e cobra. Sem uma checagem explícita,
+# um shape um pouco maior ou um volume esquecido viram fatura no fim do mês sem
+# nenhum aviso. (Os limites que a API reporta são o teto administrativo, não
+# prova de que a conta é cobrável — isso se vê no console.)
 #
 # Sai com código 1 se algo estourou o teto.
 # ============================================================

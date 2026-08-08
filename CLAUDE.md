@@ -37,9 +37,13 @@ qualquer mudança nessas áreas precisa ser conferida antes de subir:
 bash scripts/verificar-custo-zero.sh
 ```
 
-O risco é concreto porque **a conta OCI é Pay-As-You-Go**, não Free Trial: a
-Oracle deixa criar além do Always Free e cobra em silêncio. Os tetos e o que já
-foi feito para caber neles estão na §8.
+Os tetos e o que foi feito para caber neles estão na §8.
+
+> Os *service limits* que a API da OCI reporta (A1: 41 OCPU, storage: 30 TB) são
+> só o teto que a Oracle registra — **não** provam que a conta pode ser cobrada,
+> e conta Free Tier também mostra números altos. O tipo real da conta aparece no
+> console, em **Billing → Subscriptions**. Independentemente disso, a regra aqui
+> é ficar dentro do Always Free.
 
 ## 2. Stack
 
@@ -155,10 +159,10 @@ com troca de senha obrigatória.
 - **Uma VM só**: `jcard-server`, A1.Flex 2 OCPU / 12 GB (cai para 1/6 se faltar
   capacidade), com Postgres + backend + frontend + Caddy. Para ~10 pessoas sobra.
   O Postgres **não tem porta publicada** — vive só na rede interna do compose.
-- ⚠️ **A conta é Pay-As-You-Go**, não Free Trial: os limites estão muito acima do
-  gratuito (A1: 41 OCPU / 277 GB; storage 30 TB), então a Oracle deixa criar além
-  do Always Free e **cobra**. Tetos a respeitar: **4 OCPU + 24 GB de A1** e
-  **200 GB de storage** na tenancy inteira (94 GB já são do EBD).
+- **Tetos do Always Free a respeitar**: **4 OCPU + 24 GB de A1** e **200 GB de
+  storage** na tenancy inteira (94 GB já são do EBD). Os limites que a API reporta
+  são maiores, mas isso é o teto administrativo da Oracle, não permissão de gasto —
+  o tipo da conta se confere no console (Billing → Subscriptions).
 - ⚠️ `E2.1.Micro` tem **limite 2 na tenancy e as duas são do `ebd-samambaia`** —
   não dá para criar mais uma sem pedir aumento de limite (e pagar).
 - **Capacidade A1 é o gargalo**: `sa-saopaulo-1` responde "Out of host capacity"

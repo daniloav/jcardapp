@@ -10,20 +10,23 @@ services:
     image: postgres:16-alpine
     container_name: jcard-postgres
     restart: unless-stopped
-    mem_limit: 3g
+    # Ajustável porque a capacidade Ampere decide o tamanho da VM: numa de 3 GB
+    # os padrões daqui não caberiam. Ver JCARD_MEM_* no .env.
+    mem_limit: ${JCARD_MEM_DB:-2g}
     # Sem `ports:` de propósito. O Postgres fica acessível SÓ pela rede interna
     # do compose — nem no IP privado, nem no público. É mais seguro que a
     # topologia de 2 VMs, onde a porta 5432 precisava trafegar entre máquinas.
     command:
       - "postgres"
       - "-c"
-      - "shared_buffers=768MB"
+      - "shared_buffers=${JCARD_PG_SHARED_BUFFERS:-256MB}"
       - "-c"
-      - "effective_cache_size=2GB"
+      - "effective_cache_size=${JCARD_PG_CACHE:-768MB}"
       - "-c"
-      - "max_connections=30"
+      # 10 pessoas usando algumas vezes por mês não precisam de mais que isto.
+      - "max_connections=20"
       - "-c"
-      - "work_mem=16MB"
+      - "work_mem=8MB"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-jcard}
       POSTGRES_USER: ${POSTGRES_USER:-jcard}
@@ -41,7 +44,7 @@ services:
     image: ghcr.io/daniloav/jcard-backend:${JCARD_IMAGE_TAG:-latest}
     container_name: jcard-backend
     restart: unless-stopped
-    mem_limit: 3g
+    mem_limit: ${JCARD_MEM_BACKEND:-2g}
     depends_on:
       db:
         condition: service_healthy

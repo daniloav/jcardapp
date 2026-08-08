@@ -31,8 +31,25 @@ sudo netfilter-persistent save 2>/dev/null || true
 # Nada a fazer para o Postgres: ele roda na rede interna do compose, sem porta
 # publicada no host — não há o que liberar nem o que proteger no firewall.
 
-# Sem swap: a A1 tem 6–12 GB. O swap de 3 GB do projeto EBD existia porque
-# aquelas VMs tinham 1 GB.
+# Swap só faz falta se a capacidade Ampere obrigou a pegar um shape pequeno.
+# Com 4 GB ou mais a stack roda folgada e swap só atrapalharia (I/O em disco).
+RAM_MB=$(free -m | awk '/^Mem:/{print $2}')
+if [[ "${1:-}" == "--swap" || "$RAM_MB" -lt 3500 ]]; then
+  echo "▶ RAM de ${RAM_MB} MB — criando 3 GB de swap..."
+  if ! sudo swapon --show | grep -q '/swapfile'; then
+    sudo fallocate -l 3G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=3072
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+  fi
+  # Prefere manter as coisas na RAM; o swap é rede de segurança, não uso normal.
+  echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-jcard.conf >/dev/null
+  sudo sysctl -p /etc/sysctl.d/99-jcard.conf >/dev/null
+  sudo swapon --show
+else
+  echo "▶ RAM de ${RAM_MB} MB — sem necessidade de swap."
+fi
 
 echo
 echo "✅ VM preparada."

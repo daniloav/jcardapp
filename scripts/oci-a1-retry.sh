@@ -31,13 +31,19 @@ NOME="${DISPLAY_NAME:-jcard-server}"
 SSH_KEY="${SSH_KEY_FILE:-$HOME/.ssh/jcard_deploy.pub}"
 INTERVALO="${SLEEP_SECONDS:-60}"
 
-# Uma VM só, com a stack inteira. Começa em 2 OCPU/12 GB (confortável e ainda
-# dentro do gratuito) e, se a capacidade não aparecer, desce para 1 OCPU/6 GB —
-# que já sobra para ~10 pessoas e é MUITO mais fácil de alocar.
-# A A1.Flex pode ser redimensionada depois: parar a instância, editar o shape,
-# ligar de novo. Então pegar capacidade agora vale mais que esperar o ideal.
-OCPUS="${OCPUS:-2}" ; MEM="${MEM_GB:-12}" ; tentativa=0
-DEGRADA_APOS="${DEGRADA_APOS:-10}"
+# Escada de tamanhos, do melhor para o mínimo viável. A cada rodada tenta TODOS,
+# porque capacidade Ampere aparece em fatias: pedir menos aumenta muito a chance
+# de encaixar num host com pouco espaço livre.
+#
+# O piso é 1 OCPU / 3 GB. A A1.Flex aceita até 1 GB (igual às VMs do EBD), mas
+# 1 GB não roda a stack inteira numa máquina só — foi justamente por isso que o
+# EBD precisou de DUAS VMs de 1 GB, e ainda com 3 GB de swap. Aqui rodam juntos
+# Postgres + Quarkus + nginx + Caddy: abaixo de ~2 GB o backend não sobe.
+#
+# Pegar o que aparecer vale mais que esperar o ideal: a A1.Flex é
+# redimensionável depois (parar a instância → editar o shape → ligar).
+ESCADA=(${ESCADA:-"2:12" "1:6" "1:4" "1:3"})
+tentativa=0
 
 if [[ -n "$(oci compute instance list -c "$COMPARTMENT_ID" --display-name "$NOME" \
       --query "data[?\"lifecycle-state\"!='TERMINATED'] | [0].id" --raw-output 2>/dev/null)" ]]; then
@@ -50,24 +56,29 @@ echo "🚀 Criando '$NOME' (A1.Flex). Ctrl+C para parar."
 while true; do
   tentativa=$((tentativa + 1))
 
-  if [[ "$tentativa" -eq "$DEGRADA_APOS" && "$OCPUS" -ne 1 ]]; then
-    OCPUS=1 ; MEM=6
-    echo "[$(date '+%F %T')] sem capacidade em 2 OCPU/12GB — passando a pedir 1 OCPU/6GB"
-  fi
+  for passo in "${ESCADA[@]}"; do
+    OCPUS="${passo%%:*}" ; MEM="${passo##*:}"
+    printf '[%s] #%s %s OCPU / %s GB ... ' "$(date '+%F %T')" "$tentativa" "$OCPUS" "$MEM"
 
-  echo "[$(date '+%F %T')] #$tentativa tentando ${OCPUS} OCPU / ${MEM} GB"
-  if id=$(oci compute instance launch \
-      --compartment-id "$COMPARTMENT_ID" --availability-domain "$AD" \
-      --shape VM.Standard.A1.Flex \
-      --shape-config "{\"ocpus\":${OCPUS},\"memoryInGBs\":${MEM}}" \
-      --image-id "$IMAGE_ID" --subnet-id "$SUBNET_ID" \
-      --boot-volume-size-in-gbs 50 --assign-public-ip true \
-      --display-name "$NOME" --ssh-authorized-keys-file "$SSH_KEY" \
-      --query 'data.id' --raw-output 2>/dev/null); then
-    echo "[$(date '+%F %T')] ✅ $NOME criada (${OCPUS} OCPU / ${MEM} GB): $id"
-    echo "Próximo passo: bash scripts/oci-descobrir.sh"
-    exit 0
-  fi
+    if id=$(oci compute instance launch \
+        --compartment-id "$COMPARTMENT_ID" --availability-domain "$AD" \
+        --shape VM.Standard.A1.Flex \
+        --shape-config "{\"ocpus\":${OCPUS},\"memoryInGBs\":${MEM}}" \
+        --image-id "$IMAGE_ID" --subnet-id "$SUBNET_ID" \
+        --boot-volume-size-in-gbs 50 --assign-public-ip true \
+        --display-name "$NOME" --ssh-authorized-keys-file "$SSH_KEY" \
+        --query 'data.id' --raw-output 2>/dev/null); then
+      echo "✅"
+      echo "[$(date '+%F %T')] $NOME criada com ${OCPUS} OCPU / ${MEM} GB: $id"
+      if [[ "$MEM" -lt 4 ]]; then
+        echo "⚠️  Com ${MEM} GB, rode o bootstrap com swap:  bash scripts/oci-bootstrap.sh --swap"
+      fi
+      echo "Próximo passo: bash scripts/oci-descobrir.sh"
+      exit 0
+    fi
+    echo "sem capacidade"
+    sleep 5
+  done
 
   sleep "$INTERVALO"
 done

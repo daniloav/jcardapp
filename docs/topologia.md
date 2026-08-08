@@ -44,9 +44,11 @@ vm-standard-e2-1-micro-count →  limite: 2, used: 2, available: 0
 Uma terceira exigiria pedido de aumento de limite à Oracle e sairia do Always
 Free. A cota Ampere, por outro lado, está livre e é bem melhor.
 
-> ⚠️ **A conta é Pay-As-You-Go**, não Free Trial. Os limites estão muito acima do
-> gratuito (A1: 41 OCPU e 277 GB; storage: 30 TB), ou seja, a Oracle **permite
-> criar além do Always Free e cobra por isso**. Os tetos gratuitos a respeitar:
+> **Tetos do Always Free a respeitar.** A API reporta limites bem maiores (A1: 41
+> OCPU e 277 GB; storage: 30 TB), mas isso é o teto administrativo da Oracle e
+> **não** prova que a conta pode ser cobrada — conta Free Tier também mostra
+> números altos. O tipo real está no console, em Billing → Subscriptions. De
+> qualquer forma, a regra do projeto é não passar destes valores:
 >
 > | Recurso | Teto Always Free | Uso do JcardApp |
 > |---|---|---|
@@ -60,7 +62,7 @@ Free. A cota Ampere, por outro lado, está livre e é bem melhor.
 
 | | **jcard-server** |
 |---|---|
-| Shape | `VM.Standard.A1.Flex` · 2 OCPU / 12 GB (cai para 1/6 se a capacidade não aparecer) |
+| Shape | `VM.Standard.A1.Flex` · escada 2/12 → 1/6 → 1/4 → 1/3, conforme a capacidade |
 | SO | Ubuntu 24.04 **aarch64** |
 | Boot volume | 50 GB |
 | Roda | `caddy` + `frontend` (nginx) + `backend` (Quarkus) + `db` (Postgres 16) |
@@ -68,8 +70,15 @@ Free. A cota Ampere, por outro lado, está livre e é bem melhor.
 | Região | `sa-saopaulo-1` · AD-1 |
 
 **Capacidade é o gargalo.** A Oracle responde *"Out of host capacity"* para
-Ampere com frequência. `scripts/oci-a1-retry.sh` insiste em segundo plano e,
-após 10 tentativas, passa a pedir 1 OCPU / 6 GB — que já sobra para 10 pessoas.
+Ampere com frequência. `scripts/oci-a1-retry.sh` percorre uma escada a cada
+rodada — 2/12, 1/6, 1/4 e 1/3 — porque pedir menos aumenta muito a chance de
+encaixar num host com pouco espaço livre.
+
+O piso é **1 OCPU / 3 GB**. A A1.Flex aceita até 1 GB (igual às VMs do EBD), mas
+1 GB não roda a stack inteira numa máquina só — foi exatamente por isso que o EBD
+precisou de duas. Aqui Postgres, Quarkus, nginx e Caddy dividem a mesma VM.
+Abaixo de 4 GB o `oci-bootstrap.sh` cria 3 GB de swap automaticamente, e os
+limites de memória dos containers se ajustam pelo `.env` (`JCARD_MEM_*`).
 
 A A1.Flex é **redimensionável**: parar a instância → editar o shape → ligar. Por
 isso vale pegar a capacidade que aparecer e crescer depois, em vez de esperar
@@ -126,8 +135,8 @@ na Security List restrita ao `/32` da VM de app, reforçando no `iptables`.
 
 ## Conferir que continua grátis
 
-A conta é Pay-As-You-Go: a Oracle não bloqueia quando se passa do gratuito, ela
-cobra. Antes de mudar shape, criar volume ou ligar qualquer serviço novo:
+Se a conta estiver com upgrade, a Oracle não bloqueia ao passar do gratuito —
+ela cobra. Antes de mudar shape, criar volume ou ligar qualquer serviço novo:
 
 ```bash
 bash scripts/verificar-custo-zero.sh

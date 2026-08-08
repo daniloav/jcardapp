@@ -13,10 +13,11 @@ on:
 permissions:
   contents: read
 
-# Repositório privado no plano Free tem 2.000 min/mês de Actions. Build, testes,
-# migrations e gitleaks rodam sempre (são rápidos e pegam quebra real). Semgrep e
-# Trivy, que são os caros, ficam em PR e no agendamento semanal — em push direto
-# na main eles não acrescentam nada que o PR já não tenha visto.
+# Semgrep e Trivy são os jobs caros. A condição em cada um se adapta sozinha à
+# visibilidade do repositório:
+#   público  -> Actions é ilimitado, então rodam em TODO push (melhor segurança)
+#   privado  -> 2.000 min/mês no plano Free, então rodam só em PR e no cron semanal
+# Build, testes, migrations e gitleaks rodam sempre nos dois casos.
 
 jobs:
   # ------------------------------------------------- build e testes ------
@@ -120,7 +121,9 @@ jobs:
   # --------------------------------------------------------- segurança ---
   sast:
     name: SAST · Semgrep
-    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    if: >-
+      github.event_name == 'pull_request' || github.event_name == 'schedule'
+      || github.event.repository.private == false
     runs-on: ubuntu-latest
     container:
       image: semgrep/semgrep
@@ -138,7 +141,9 @@ jobs:
 
   trivy:
     name: Dependências e IaC · Trivy
-    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    if: >-
+      github.event_name == 'pull_request' || github.event_name == 'schedule'
+      || github.event.repository.private == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -90,10 +90,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # O GHCR em repositório privado tem 500 MB no plano Free e cada deploy
-      # publica uma camada nova. Sem esta limpeza a cota estoura em poucos meses
-      # e o registry passa a cobrar. Guardamos 5 versões — o suficiente para
-      # rollback (JCARD_IMAGE_TAG=<sha>) sem acumular lixo.
+      # Em repositório PRIVADO o GHCR tem 500 MB no plano Free e cada deploy
+      # publica uma camada nova — sem esta limpeza a cota estoura em poucos meses.
+      # Em repositório PÚBLICO o armazenamento é livre, mas manter só as últimas
+      # versões continua sendo higiene. Guardamos 5, o suficiente para rollback
+      # (JCARD_IMAGE_TAG=<sha>).
       - name: Apagar versões antigas das imagens
         continue-on-error: true   # falta de permissão não pode derrubar o deploy
         uses: actions/delete-package-versions@v5
