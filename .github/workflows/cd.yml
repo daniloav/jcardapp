@@ -175,11 +175,18 @@ jobs:
           printf '%s' "$JWT_PRIV" | ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" "cat > ~/$APP_DIR/keys/privateKey.pem && chmod 600 ~/$APP_DIR/keys/privateKey.pem"
           printf '%s' "$JWT_PUB"  | ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" "cat > ~/$APP_DIR/keys/publicKey.pem"
 
-      - name: Pull e up (sem build na VM)
-        if: steps.cfg.outputs.ready == 'true'
+      # Só faz login quando as imagens são privadas. Com os pacotes públicos no
+      # GHCR o `pull` é anônimo, e aí o PAT deixa de ser necessário — um secret
+      # a menos para manter e rotacionar.
+      - name: Login no GHCR (só se as imagens forem privadas)
+        if: steps.cfg.outputs.ready == 'true' && env.GHCR_PAT != ''
         run: |
           printf '%s' "$GHCR_PAT" | ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
             "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+
+      - name: Pull e up (sem build na VM)
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
           ssh -i ~/.ssh/id_deploy -o ServerAliveInterval=30 "$SSH_USER@$SSH_HOST" "
             cd ~/$APP_DIR &&
             docker compose --env-file .env pull &&
