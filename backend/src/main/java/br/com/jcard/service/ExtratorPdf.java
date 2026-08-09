@@ -59,14 +59,17 @@ public class ExtratorPdf {
         }
     }
 
-    /** Confere a assinatura {@code %PDF} antes de entregar o arquivo ao PDFBox. */
-    public void validarPdf(byte[] conteudo) {
+    /**
+     * O arquivo é um PDF?
+     *
+     * <p>Decidimos pela assinatura {@code %PDF} e não pela extensão: o nome do
+     * arquivo mente com facilidade, e um PDF renomeado para .csv acabaria no
+     * parser errado.
+     */
+    public boolean ehPdf(byte[] conteudo) {
         if (conteudo == null || conteudo.length < 5) {
             throw new WebApplicationException("Arquivo vazio.", 400);
         }
-        String assinatura = new String(conteudo, 0, 4, StandardCharsets.ISO_8859_1);
-        if (!"%PDF".equals(assinatura)) {
-            throw new WebApplicationException("O arquivo enviado não é um PDF.", 400);
-        }
+        return "%PDF".equals(new String(conteudo, 0, 4, StandardCharsets.ISO_8859_1));
     }
 }

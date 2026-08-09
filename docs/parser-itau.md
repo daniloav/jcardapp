@@ -1,44 +1,51 @@
-# Calibrar o parser da fatura do Itaú
+# Ler a fatura do Itaú
 
-O parser é a peça mais frágil do app, porque depende do layout de um PDF que o
-banco pode mudar sem avisar. Por isso ele foi feito para ser **ajustado sem
-recompilar**: as expressões regulares vêm da configuração.
+O app aceita **CSV** (recomendado) e **PDF**. A escolha do leitor é feita pelo
+conteúdo do arquivo — a assinatura `%PDF` —, nunca pela extensão: nome de
+arquivo mente, e um PDF renomeado cairia no parser errado.
 
-## Como funciona
+## Por que o CSV é o caminho preferido
 
-`ExtratorPdf` usa o PDFBox com `setSortByPosition(true)` — sem isso as colunas
-"data · descrição · valor" saem embaralhadas, na ordem interna do arquivo.
+O PDF é formato de **apresentação**. Calibrar contra uma fatura real mostrou
+o tamanho do problema (detalhes em "O que uma fatura real revelou"):
 
-`ItauFaturaParser` então percorre o texto de cima para baixo mantendo o
-**portador corrente**: a fatura vem seccionada por cartão adicional, e cada bloco
-abre com o nome e os 4 últimos dígitos. Toda linha de lançamento depois disso
-pertence àquele cartão.
+| | PDF | CSV |
+|---|---|---|
+| lançamentos por linha | 2 (colunas lado a lado) | 1 |
+| parcela | colada na descrição, ou `-`, ou ausente | campo próprio |
+| descrição | cortada na largura da coluna | inteira |
+| blocos misturados | 5 tipos (cartões, internacionais, taxas, simulações, parcelas futuras) | nenhum |
+| resultado numa fatura real | 2 de 5 cartões fechando | **514 de 514 lançamentos, zero ignorados** |
 
-O que não casa nenhuma regra vai para `linhasIgnoradas` em vez de sumir. E como a
-conciliação exige que a soma bata com o total impresso, **uma linha perdida vira
-fatura `DIVERGENTE`** — nunca um rateio errado em silêncio.
+O CSV **não traz o total nem o cartão** de cada lançamento. O total é informado
+por quem importa — e a conciliação confere contra a soma, então a invariante
+continua de pé. Sem o cartão, tudo nasce no pool, que é o fluxo normal do app:
+cada pessoa reivindica o que reconhece.
 
-## As quatro regexes
+## Formato do CSV
 
-Em `application.properties` (ou como variável de ambiente no `.env`):
+Separador `;`, cabeçalho obrigatório. A **ordem das colunas não importa** — são
+lidas pelo nome:
 
-| Propriedade | Grupos esperados |
-|---|---|
-| `jcard.parser.itau.portador` | 1 = nome, 2 = 4 dígitos do cartão |
-| `jcard.parser.itau.lancamento` | 1 = data `dd/MM`, 2 = descrição, 3 = valor pt-BR |
-| `jcard.parser.itau.total` | 1 = valor total da fatura |
-| `jcard.parser.itau.vencimento` | 1 = data `dd/MM/yyyy` |
-
-Valores padrão, escritos para o layout típico do Itaú:
-
-```properties
-jcard.parser.itau.portador=^\\s*([A-ZÀ-Ú][A-ZÀ-Ú .'\\-]{2,})\\s*[\\(\\-]?\\s*(?:final|FINAL)\\s*[:\\s]?\\s*(\\d{4})\\s*\\)?\\s*$
-jcard.parser.itau.lancamento=^\\s*(\\d{2}/\\d{2})\\s+(.{3,}?)\\s+(-?\\s*[\\d.]{1,12},\\d{2})\\s*$
-jcard.parser.itau.total=(?i)total\\s+(?:desta\\s+fatura|da\\s+fatura|a\\s+pagar)\\D{0,20}?(-?[\\d.]{1,12},\\d{2})
-jcard.parser.itau.vencimento=(?i)vencimento\\D{0,20}?(\\d{2}/\\d{2}/\\d{4})
+```csv
+pagina;coluna;data;estabelecimento;parcela;valor
+2;1;08/09;PARTMED E ODONTOCO;11/12;190,00
+6;2;09/07;DL*UberRides;;7,35
+8;2;04/08;DESC ANTECIPA PARCELAS;;-23,48
 ```
 
-## O que uma fatura real revelou (07/2026)
+| coluna | obrigatória | observação |
+|---|---|---|
+| `data` | sim | `dd/MM`; o ano vem da competência |
+| `estabelecimento` | sim | também aceita `descricao` |
+| `valor` | sim | pt-BR; negativo é crédito |
+| `parcela` | não | `03/10`, ou vazio para compra à vista |
+| `pagina`, `coluna` | não | ignoradas; servem para conferir contra o PDF |
+
+Créditos (estornos, `DESC ANTECIPA PARCELAS`) já vêm negativos e são mantidos
+assim — é o que faz a soma fechar com o total.
+
+## O que uma fatura real revelou (07/2026) — e por que o PDF é o plano B
 
 Calibrar contra uma fatura de verdade mostrou que o layout é **muito** mais
 complexo que o modelo típico. Registro aqui para a próxima sessão não redescobrir.

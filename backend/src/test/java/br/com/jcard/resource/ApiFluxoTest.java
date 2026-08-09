@@ -193,15 +193,53 @@ class ApiFluxoTest {
         given().auth().oauth2(tokenMaria).when().get("/api/cartoes").then().statusCode(403);
     }
 
+    /**
+     * Arquivo que não é PDF cai no leitor de CSV — e um lixo qualquer é recusado
+     * com a instrução do cabeçalho esperado, não com um erro genérico.
+     */
     @Test
-    @DisplayName("importar algo que não é PDF é recusado")
+    @DisplayName("arquivo que não é PDF nem CSV válido é recusado com instrução")
     void arquivoInvalido() {
         given().auth().oauth2(trocarESeguir())
                 .multiPart("arquivo", "fatura.pdf", "isto nao e um pdf".getBytes())
                 .multiPart("competencia", "2026-08")
             .when().post("/api/faturas")
-            .then().statusCode(400)
-                .body("message", equalTo("O arquivo enviado não é um PDF."));
+            .then().statusCode(422)
+                .body("message", org.hamcrest.Matchers.containsString("pagina;coluna;data"));
+    }
+
+    @Test
+    @DisplayName("CSV válido é importado, com o total informado por quem importa")
+    void importarCsv() {
+        String csv = """
+                pagina;coluna;data;estabelecimento;parcela;valor
+                2;1;08/07;PADARIA DO BAIRRO;;120,00
+                2;2;09/07;LOJA PARCELADA;03/10;80,00
+                """;
+        given().auth().oauth2(trocarESeguir())
+                .multiPart("arquivo", "fatura.csv", csv.getBytes())
+                .multiPart("competencia", "2026-08")
+                .multiPart("valorTotal", "200,00")
+            .when().post("/api/faturas")
+            .then().statusCode(200)
+                .body("totalLancamentos", equalTo(2))
+                .body("emissor", equalTo("ITAU_CSV"))
+                .body("status", equalTo("EM_AVALIACAO"));
+    }
+
+    @Test
+    @DisplayName("CSV sem o total informado explica o que falta")
+    void csvSemTotal() {
+        String csv = """
+                pagina;coluna;data;estabelecimento;parcela;valor
+                2;1;08/07;PADARIA DO BAIRRO;;120,00
+                """;
+        given().auth().oauth2(trocarESeguir())
+                .multiPart("arquivo", "fatura.csv", csv.getBytes())
+                .multiPart("competencia", "2026-08")
+            .when().post("/api/faturas")
+            .then().statusCode(422)
+                .body("message", org.hamcrest.Matchers.containsString("não traz o total"));
     }
 
     @Test

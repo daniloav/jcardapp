@@ -10,8 +10,9 @@ import { ToastService } from '../core/toast.service';
   template: `
     <h1>Importar fatura</h1>
     <p class="sub">
-      Envie o PDF da fatura do Itaú. O app quebra os lançamentos, aplica os
-      parcelamentos já assumidos e avisa todos os utilizadores por e-mail.
+      Envie o <strong>CSV</strong> da fatura (recomendado) ou o PDF. O app quebra
+      os lançamentos, aplica os parcelamentos já assumidos e avisa todos os
+      utilizadores por e-mail.
     </p>
 
     <form class="cartao" (ngSubmit)="enviar()">
@@ -22,8 +23,8 @@ import { ToastService } from '../core/toast.service';
       </label>
 
       <label for="arquivo">
-        PDF da fatura
-        <input id="arquivo" name="arquivo" type="file" accept="application/pdf"
+        Arquivo da fatura (.csv ou .pdf)
+        <input id="arquivo" name="arquivo" type="file" accept=".csv,text/csv,application/pdf"
                (change)="escolher($event)" required />
       </label>
 
@@ -33,8 +34,9 @@ import { ToastService } from '../core/toast.service';
                placeholder="ex.: 3.456,78" inputmode="decimal" />
       </label>
       <p class="meta">
-        Preencha só se a importação reclamar que não achou o total no PDF. O app
-        confere esse valor contra a soma dos lançamentos e trava se não bater.
+        <strong>Obrigatório no CSV</strong>, que não traz o total. No PDF, só se a
+        importação reclamar. O app confere contra a soma dos lançamentos e trava
+        se não bater — é o que impede cobrar alguém em cima de leitura errada.
       </p>
 
       <button type="submit" [disabled]="!arquivo || enviando()">
@@ -43,8 +45,15 @@ import { ToastService } from '../core/toast.service';
     </form>
 
     <div class="aviso info">
+      <strong>Prefira o CSV.</strong> O PDF é feito para ser lido por gente: tem
+      duas colunas, descrições cortadas na largura e blocos misturados
+      (internacionais, taxas, parcelas futuras). O CSV traz um lançamento por
+      linha, com a parcela num campo próprio.
+    </div>
+
+    <div class="aviso info">
       <strong>Importar duas vezes não duplica.</strong> O app identifica o arquivo
-      pelo conteúdo e recusa um PDF já importado.
+      pelo conteúdo e recusa um já importado.
     </div>
   `,
 })

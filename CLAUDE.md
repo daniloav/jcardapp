@@ -7,9 +7,9 @@
 
 **JcardApp** — o pai do Danilo empresta o cartão de crédito dele para outras
 pessoas, e no fechamento da fatura fica impossível separar quem gastou o quê.
-O app resolve isso: o admin sobe o **PDF da fatura do Itaú**, uma rotina quebra
-a fatura lançamento a lançamento, e cada **utilizador** assume o que reconhece
-como seu para depois pagar.
+O app resolve isso: o admin sobe a **fatura do Itaú em CSV** (ou o PDF), uma
+rotina quebra a fatura lançamento a lançamento, e cada **utilizador** assume o
+que reconhece como seu para depois pagar.
 
 Dono/desenvolvedor: **Danilo** (`danilo.av@gmail.com`). Idioma do domínio, do
 código e da UI: **português**.
@@ -70,7 +70,7 @@ jcardapp/
 │   ├── Dockerfile.runtime      ← SÓ empacota (o build é no runner) — ver §6
 │   └── src/main/java/br/com/jcard/
 │       ├── model/              ← entidades (EntidadeBase, Fatura, Lancamento, ...)
-│       ├── parser/             ← ItauFaturaParser, TextoFatura, ChaveParcelamento
+│       ├── parser/             ← ItauCsvParser (preferido) · ItauFaturaParser (PDF) · ChaveParcelamento
 │       ├── service/            ← Conciliacao, Atribuicao, Reivindicacao, Acerto, Notificacao
 │       ├── resource/           ← endpoints REST + ErrorMapper
 │       ├── dto/ · security/ · bootstrap/
@@ -106,9 +106,10 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 26 testes, incluindo as duas
-  invariantes de conciliação, a herança de parcela e o parser do Itaú contra o
-  fixture `src/test/resources/fatura-itau-exemplo.txt`.
+- **Backend**: `cd backend && mvn -B verify` — 53 testes, incluindo as duas
+  invariantes de conciliação, a herança de parcela, o fluxo da API por HTTP e os
+  dois leitores de fatura contra fixtures anonimizados
+  (`fatura-itau-exemplo.csv` e `.txt`).
 - **Frontend**: `cd frontend && npx ng build`.
 - O perfil `%test` usa o banco **`jcard_test`** com `flyway.clean-at-start` — nunca
   aponte para o banco de dev, ele é apagado a cada execução.
@@ -137,6 +138,13 @@ com troca de senha obrigatória.
   decide uma cobrança contestada.
 - **O PDF não é persistido.** Só o SHA-256 (idempotência da importação) e o texto
   extraído (permite reprocessar sem pedir o arquivo de novo).
+- **CSV é o caminho principal; PDF é o plano B.** Numa fatura real o CSV leu
+  514 de 514 lançamentos sem sobra, enquanto o PDF fechava 2 de 5 cartões: ele
+  tem duas colunas, descrições cortadas na largura e cinco tipos de bloco
+  misturados. O leitor é escolhido pela assinatura `%PDF`, não pela extensão.
+- **O CSV não traz o total nem o cartão.** O total é informado por quem importa
+  (a conciliação confere contra a soma, então a invariante continua valendo) e
+  os lançamentos nascem no pool, que é o fluxo normal.
 - **Regexes do parser na configuração** (`jcard.parser.itau.*`): layout de banco
   muda, e calibrar não pode exigir recompilar.
 - **O service worker não cacheia `/api`.** Dado financeiro não pode sobrar no
@@ -185,9 +193,8 @@ com troca de senha obrigatória.
 - ⏳ **VM ainda não provisionada.** Migramos de Oracle para GCP + Neon depois de
   2 dias sem capacidade Ampere. Falta criar as contas (GCP e Neon) e rodar
   `scripts/gcp-provisionar.sh`.
-- ⏳ **Parser do Itaú precisa ser calibrado com um PDF real.** A estrutura e os
-  testes estão prontos contra um fixture anonimizado; as regexes foram escritas
-  a partir do layout típico do Itaú e podem precisar de ajuste. Guia:
-  `docs/parser-itau.md`.
+- ✅ **Leitura da fatura resolvida via CSV** — 514 de 514 lançamentos de uma
+  fatura real, zero ignorados. O PDF fica como plano B e não fecha (2 de 5
+  cartões); o diagnóstico completo está em `docs/parser-itau.md`.
 - ⏳ Pendências do Danilo: contas GCP e Neon, token do DuckDNS, senha de app do
   Gmail, PAT com `read:packages`.

@@ -7,7 +7,10 @@ import br.com.jcard.model.OrigemAtribuicao;
 import br.com.jcard.model.Usuario;
 import br.com.jcard.parser.FaturaLida;
 import br.com.jcard.parser.FaturaParser;
+import br.com.jcard.parser.ItauCsvParser;
+import br.com.jcard.parser.ItauFaturaParser;
 import br.com.jcard.parser.LancamentoLido;
+import java.nio.charset.StandardCharsets;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -32,7 +35,10 @@ public class FaturaImportService {
     ExtratorPdf extrator;
 
     @Inject
-    FaturaParser parser;
+    ItauFaturaParser parserPdf;
+
+    @Inject
+    ItauCsvParser parserCsv;
 
     @Inject
     AtribuicaoService atribuicao;
@@ -56,7 +62,6 @@ public class FaturaImportService {
     public Fatura importar(byte[] pdf, String nomeArquivo, LocalDate competencia,
                            BigDecimal totalManual, Usuario quem) {
 
-        extrator.validarPdf(pdf);
         String hash = extrator.hash(pdf);
 
         Fatura existente = Fatura.porHash(hash);
@@ -67,19 +72,34 @@ public class FaturaImportService {
                     + existente.competencia + ").", 409);
         }
 
-        String texto = extrator.texto(pdf);
+        // PDF ou CSV: decide pelo conteúdo, não pela extensão — nome de arquivo
+        // mente com facilidade e um PDF renomeado quebraria o parser de CSV.
+        boolean ehPdf = extrator.ehPdf(pdf);
+        String texto;
+        FaturaParser parser;
+        if (ehPdf) {
+            texto = extrator.texto(pdf);
+            parser = parserPdf;
+        } else {
+            texto = new String(pdf, StandardCharsets.UTF_8);
+            parser = parserCsv;
+        }
         FaturaLida lida = parser.ler(texto, competencia.withDayOfMonth(1));
 
         BigDecimal total = totalManual != null ? totalManual : lida.valorTotal();
         if (total == null) {
-            throw new WebApplicationException(
-                    "Não encontrei o total da fatura no PDF. Reenvie informando o valor total "
-                    + "manualmente para eu conferir contra os lançamentos lidos.", 422);
+            throw new WebApplicationException(ehPdf
+                    ? "Não encontrei o total da fatura no PDF. Reenvie informando o valor total "
+                      + "manualmente para eu conferir contra os lançamentos lidos."
+                    : "O CSV não traz o total da fatura. Informe o valor total impresso na "
+                      + "fatura para eu conferir contra a soma dos lançamentos.", 422);
         }
         if (lida.lancamentos().isEmpty()) {
-            throw new WebApplicationException(
-                    "Não reconheci nenhum lançamento neste PDF. Se o layout mudou, ajuste as "
-                    + "regexes em jcard.parser.itau.* e tente de novo.", 422);
+            throw new WebApplicationException(ehPdf
+                    ? "Não reconheci nenhum lançamento neste PDF. Se o layout mudou, ajuste as "
+                      + "regexes em jcard.parser.itau.* e tente de novo."
+                    : "Não reconheci nenhum lançamento no CSV. O cabeçalho esperado é "
+                      + "pagina;coluna;data;estabelecimento;parcela;valor", 422);
         }
 
         Fatura fatura = new Fatura();
@@ -144,6 +164,7 @@ public class FaturaImportService {
             throw new WebApplicationException("Fatura fechada não é reprocessada.", 409);
         }
 
+        FaturaParser parser = "ITAU_CSV".equals(fatura.emissor) ? parserCsv : parserPdf;
         FaturaLida lida = parser.ler(fatura.textoExtraido, fatura.competencia);
         Lancamento.delete("fatura.id = ?1 and (responsavel is null or origemAtribuicao <> ?2)",
                 fatura.id, OrigemAtribuicao.MANUAL);
