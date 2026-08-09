@@ -91,6 +91,24 @@ O `final 0020` vinha com cabeçalho próprio (`DATA ESTABELECIMENTO VALOR EM R$`
 e **duas linhas por transação** — estabelecimento numa, `CATEGORIA .CIDADE` na
 outra. Precisa de tratamento à parte.
 
+### 7. O problema de verdade é a ASSOCIAÇÃO, não a leitura
+
+Isolado, cada formato de linha é lido corretamente — datas, descrições, parcelas
+e valores saem certos. O que não fecha é **de quem é cada lançamento**.
+
+Concatenar as colunas num texto linear perde a geometria. Uma transação que
+aparece "depois" do cabeçalho `DANIELA (final 0020)` no meu texto pode estar,
+na página impressa, na coluna da direita, sob outro cabeçalho. Foi isso que
+inflou o 0020 em R$ 3.827: 146 compras à vista legítimas, mas de outro cartão.
+
+**A correção é um parser posicional**: guardar `(página, coluna, y)` de cada
+linha e ligar cada transação ao cabeçalho mais próximo **acima dela, na mesma
+coluna e página** — em vez de "o último cabeçalho que apareceu no texto".
+
+Não é ajuste de regex: é trocar a leitura linha-a-linha por leitura por
+coordenada. O `PDFTextStripper` já expõe `TextPosition` com x/y por caractere,
+então dá para fazer; é trabalho de verdade, não de meia hora.
+
 ### Estado da calibração
 
 Com extração por coluna + seções delimitadas + parcela opcional:
