@@ -10,8 +10,11 @@ services:
     image: ghcr.io/daniloav/jcard-backend:${JCARD_IMAGE_TAG:-latest}
     container_name: jcard-backend
     restart: unless-stopped
-    # Sobra ~800 MB depois do SO; o resto vai para nginx e Caddy.
-    mem_limit: ${JCARD_MEM_BACKEND:-700m}
+    # Medido na e2-micro: dos 955 MB, o SO + daemon do Docker já ocupam ~456,
+    # sobrando ~498. Tirando ~50 para nginx e Caddy, restam ~450 para o backend.
+    # 512m com MaxRAMPercentage=60 dá ~307 MB de heap — cabe, e os 2 GB de swap
+    # cobrem o pico do parse de PDF (que acontece uma vez por mês).
+    mem_limit: ${JCARD_MEM_BACKEND:-512m}
     volumes:
       # Chaves JWT gravadas pelo CD a partir dos secrets: a imagem fica sem
       # segredo e os tokens sobrevivem ao deploy.
