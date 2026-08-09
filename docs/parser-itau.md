@@ -109,6 +109,42 @@ Não é ajuste de regex: é trocar a leitura linha-a-linha por leitura por
 coordenada. O `PDFTextStripper` já expõe `TextPosition` com x/y por caractere,
 então dá para fazer; é trabalho de verdade, não de meia hora.
 
+### 8. Blocos que a fatura tem além dos lançamentos por cartão
+
+Mapeados por posição, existem pelo menos cinco tipos de bloco:
+
+| bloco | onde | observação |
+|---|---|---|
+| lançamentos por cartão | p2–p8 | tem subtotal declarado |
+| **lançamentos internacionais** | p8c1 | cabeçalho `DATA ESTABELECIMENTO US$ R$` — **duas** colunas de valor |
+| anuidade, seguro, IOF, estorno | p9 | não entram nos subtotais por cartão |
+| encargos e simulações | p10–p11 | juros, CET, "e se você parcelar" |
+| compras parceladas futuras | p8c1 em diante | parcelas de meses seguintes |
+
+O `Total desta fatura` (34.455,72) menos a soma dos subtotais por cartão
+(34.353,99) dá 101,73 — a diferença são essas taxas do p9.
+
+### 9. O que ainda não fecha
+
+A extração dos lançamentos está **provada correta**: as 260 transações do cartão
+0020 têm valores plausíveis, descrições íntegras e nenhum erro de parsing.
+
+O que não fecha é a **delimitação da seção**. Geometricamente o 0020 vai de
+`p5c0 y434` até `p8c1 y592`, e tudo nesse intervalo soma R$ 19.575,64 contra os
+R$ 15.747,96 declarados. Ou o intervalo engloba lançamentos de outro cartão, ou
+o subtotal do banco não cobre tudo que está impresso ali.
+
+Hipóteses já **descartadas** com dados:
+- créditos entrando como positivos (só R$ 209 de candidatos);
+- duplicação nas bordas das colunas (2 casos, R$ 505);
+- parcelas futuras (já excluídas pela regra do "cartão não reabre");
+- erro de leitura de valor (os 15 maiores foram conferidos um a um);
+- ordem de leitura errada (o fluxo página→coluna foi confirmado por coordenada).
+
+Próximo passo sugerido: dumpar as transações do 0020 agrupadas por página e
+coluna e conferir contra a fatura impressa, página a página, para achar onde o
+intervalo diverge do que o banco considera "do cartão 0020".
+
 ### Estado da calibração
 
 Com extração por coluna + seções delimitadas + parcela opcional:
