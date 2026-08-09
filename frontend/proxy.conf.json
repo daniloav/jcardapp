@@ -1,4 +1,9 @@
 {
-  "/api": { "target": "http://localhost:8080", "secure": false },
-  "/q": { "target": "http://localhost:8080", "secure": false }
+  "_comentario": [
+    "127.0.0.1 e não 'localhost': no macOS o Node resolve 'localhost' primeiro",
+    "para ::1 (IPv6), e o Quarkus escuta só em IPv4 — o proxy devolvia 500 com",
+    "ECONNREFUSED ::1:8080 em toda chamada de /api."
+  ],
+  "/api": { "target": "http://127.0.0.1:8080", "secure": false },
+  "/q": { "target": "http://127.0.0.1:8080", "secure": false }
 }

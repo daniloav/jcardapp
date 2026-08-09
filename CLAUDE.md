@@ -20,9 +20,21 @@ código e da UI: **português**.
    impresso na fatura; se não bate, a fatura vai para `DIVERGENTE` e **nada
    avança** — ratear em cima de leitura errada cobraria valor errado de alguém.
    E a soma dos acertos tem de reproduzir o total: o que ninguém assume fica com
-   o titular. Guardião: `ConciliacaoService`.
+   o titular, e nem a conta dividida nem o encargo rateado podem perder um
+   centavo no arredondamento. Guardiões: `ConciliacaoService` e `RateioService`.
 2. **Parcelamento gruda.** Assumir a parcela 1/10 cria um `CompromissoParcelado`
    que faz as nove seguintes já nascerem no nome da pessoa nas próximas faturas.
+
+Três coisas decorrem disso e valem repetir:
+
+- **Uma conta pode ser de várias pessoas.** Quem assumiu racha entre duas ou mais,
+  com valor livre; a soma das partes tem de fechar com o lançamento.
+- **Encargo é de todo mundo que usou o cartão no mês** (IOF, anuidade, juros,
+  ajuste), dividido entre os participantes, com a sobra de centavos no titular.
+  Por isso ele fica **sem responsável** mesmo depois da conciliação.
+- **Pagar exige aceitar antes.** `ABERTO → ACEITO → INFORMADO → CONFIRMADO`, com
+  comprovante obrigatório do PIX. O aceite só abre com a fatura conciliada, que é
+  quando o valor para de mudar.
 
 Toda fatura importada dispara e-mail a **todos** os utilizadores ativos pedindo
 avaliação de responsabilidade.
@@ -69,19 +81,20 @@ jcardapp/
 ├── backend/                    ← Quarkus, pacote br.com.jcard
 │   ├── Dockerfile.runtime      ← SÓ empacota (o build é no runner) — ver §6
 │   └── src/main/java/br/com/jcard/
-│       ├── model/              ← entidades (EntidadeBase, Fatura, Lancamento, ...)
+│       ├── model/              ← entidades (EntidadeBase, Fatura, Lancamento, DivisaoLancamento, ...)
 │       ├── parser/             ← ItauCsvParser (preferido) · ItauFaturaParser (PDF) · ChaveParcelamento
-│       ├── service/            ← Conciliacao, Atribuicao, Reivindicacao, Acerto, Notificacao
+│       ├── service/            ← Conciliacao, Rateio, Divisao, Atribuicao, Reivindicacao, Acerto, Notificacao
 │       ├── resource/           ← endpoints REST + ErrorMapper
 │       ├── dto/ · security/ · bootstrap/
-│       └── resources/db/migration/V1__schema.sql
+│       └── resources/db/migration/  ← V1__schema · V2__divisao_encargos_comprovante
 ├── frontend/                   ← Angular 17
 │   ├── Dockerfile.runtime · nginx.conf
 │   └── src/{sw.js, manifest.webmanifest, app/{core,layout,pages}}
 ├── .github/workflows/          ← ci.yml (build+testes+segurança) · cd.yml (GHCR → pull na VM)
 ├── scripts/                    ← gcp-provisionar · gcp-bootstrap · duckdns-update · gen-jwt-keys
 │                                  verificar-custo-zero · oci-* (plano B, ver §8)
-└── docs/                       ← ARQUITETURA · REGRAS-DE-NEGOCIO · CICD · parser-itau · topologia
+└── docs/                       ← ARQUITETURA · REGRAS-DE-NEGOCIO · ROADMAP · CICD
+                                   parser-itau · topologia
 ```
 
 ## 4. Como rodar (dev)
@@ -106,9 +119,10 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 53 testes, incluindo as duas
-  invariantes de conciliação, a herança de parcela, o fluxo da API por HTTP e os
-  dois leitores de fatura contra fixtures anonimizados
+- **Backend**: `cd backend && mvn -B verify` — 79 testes, incluindo as duas
+  invariantes de conciliação, a divisão de contas, o rateio de encargos, o ciclo
+  de pagamento com comprovante, a herança de parcela, o fluxo da API por HTTP e
+  os dois leitores de fatura contra fixtures anonimizados
   (`fatura-itau-exemplo.csv` e `.txt`).
 - **Frontend**: `cd frontend && npx ng build`.
 - O perfil `%test` usa o banco **`jcard_test`** com `flyway.clean-at-start` — nunca
@@ -137,7 +151,22 @@ com troca de senha obrigatória.
   lançamento de quem estava com ele e chama o admin. "Quem chegou primeiro" nunca
   decide uma cobrança contestada.
 - **O PDF não é persistido.** Só o SHA-256 (idempotência da importação) e o texto
-  extraído (permite reprocessar sem pedir o arquivo de novo).
+  extraído (permite reprocessar sem pedir o arquivo de novo). O **comprovante do
+  PIX**, ao contrário, é guardado — ele *é* a prova do acerto. Fica em tabela
+  própria (`comprovante_pagamento`) e não numa coluna de `acerto`, senão o
+  `byte[]` viajaria junto em toda listagem de acertos do admin.
+- **Divisão manda no rateio.** Havendo linhas em `divisao_lancamento`, elas são a
+  verdade daquele lançamento e o `responsavel` passa a valer só como "quem
+  organizou" — continua preenchido porque é dele que o compromisso parcelado tira
+  o dono das parcelas seguintes.
+- **Encargo rateado não é gravado.** O rateio é calculado no `RateioService` a
+  cada leitura, em vez de virar linhas no banco: dado derivado persistido
+  divergiria do rateio real assim que alguém assumisse mais um lançamento. Por
+  isso a tela do utilizador e a conciliação chamam o **mesmo** método — o número
+  que a pessoa confere é, ao centavo, o que ela vai pagar.
+- **A exclusão de fatura apaga o compromisso parcelado à mão.** O resto cai por
+  cascata, mas a FK do compromisso é `ON DELETE SET NULL`: ele sobreviveria órfão
+  e seguiria atribuindo parcelas a partir de uma fatura que não existe mais.
 - **CSV é o caminho principal; PDF é o plano B.** Numa fatura real o CSV leu
   514 de 514 lançamentos sem sobra, enquanto o PDF fechava 2 de 5 cartões: ele
   tem duas colunas, descrições cortadas na largura e cinco tipos de bloco
@@ -186,8 +215,10 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 26 testes verdes (`mvn verify`).
+- ✅ Backend completo, 79 testes verdes (`mvn verify`).
 - ✅ Frontend Angular 17 + PWA compilando (84 kB no bundle inicial).
+- ✅ Conta dividida, encargo rateado, aceite com comprovante de PIX e exclusão de
+   fatura — implementados e conferidos no app rodando.
 - ✅ CI/CD escritos; o CD roda em **modo mock** enquanto os secrets `OCI_*`
   estiverem vazios — a esteira fica verde antes de as VMs existirem.
 - ⏳ **VM ainda não provisionada.** Migramos de Oracle para GCP + Neon depois de
@@ -198,3 +229,7 @@ com troca de senha obrigatória.
   cartões); o diagnóstico completo está em `docs/parser-itau.md`.
 - ⏳ Pendências do Danilo: contas GCP e Neon, token do DuckDNS, senha de app do
   Gmail, PAT com `read:packages`.
+- 📋 O que ficou para depois — e por quê — está em `docs/ROADMAP.md`. Em
+  destaque: melhorar o fluxo de indicação (busca e agrupamento no pool, desfazer
+  indicação errada, admin atribuir direto) e definir `JCARD_PIX_*` no `.env` da
+  VM antes do primeiro deploy.

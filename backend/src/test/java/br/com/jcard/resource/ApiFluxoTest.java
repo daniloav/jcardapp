@@ -6,7 +6,9 @@ import static org.hamcrest.Matchers.notNullValue;
 
 import br.com.jcard.model.Acerto;
 import br.com.jcard.model.Cartao;
+import br.com.jcard.model.ComprovantePagamento;
 import br.com.jcard.model.CompromissoParcelado;
+import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
 import br.com.jcard.model.Reivindicacao;
@@ -39,8 +41,11 @@ class ApiFluxoTest {
     @BeforeEach
     @Transactional
     void preparar() {
+        // Ordem importa: filho antes do pai, senão a FK barra o delete.
+        ComprovantePagamento.deleteAll();
         Acerto.deleteAll();
         Reivindicacao.deleteAll();
+        DivisaoLancamento.deleteAll();
         CompromissoParcelado.deleteAll();
         Lancamento.deleteAll();
         Fatura.deleteAll();
@@ -225,6 +230,87 @@ class ApiFluxoTest {
                 .body("totalLancamentos", equalTo(2))
                 .body("emissor", equalTo("ITAU_CSV"))
                 .body("status", equalTo("EM_AVALIACAO"));
+    }
+
+    @Test
+    @DisplayName("admin exclui a fatura e ela some da listagem")
+    void excluirFatura() {
+        String admin = trocarESeguir();
+        String csv = """
+                pagina;coluna;data;estabelecimento;parcela;valor
+                2;1;08/07;PADARIA DO BAIRRO;;120,00
+                """;
+        int id = given().auth().oauth2(admin)
+                .multiPart("arquivo", "fatura.csv", csv.getBytes())
+                .multiPart("competencia", "2026-08")
+                .multiPart("valorTotal", "120,00")
+            .when().post("/api/faturas")
+            .then().statusCode(200).extract().path("id");
+
+        // Sem @Transactional no endpoint, este DELETE devolvia 500 — por isso ele
+        // é exercido por HTTP e não só no serviço.
+        given().auth().oauth2(admin).when().delete("/api/faturas/" + id)
+            .then().statusCode(204);
+
+        given().auth().oauth2(admin).when().get("/api/faturas")
+            .then().statusCode(200).body("size()", equalTo(0));
+    }
+
+    @Test
+    @DisplayName("utilizador comum não exclui fatura")
+    void utilizadorNaoExcluiFatura() {
+        String admin = trocarESeguir();
+        given().contentType(ContentType.JSON).auth().oauth2(admin)
+                .body("""
+                        {"nome":"Pedro Filho","email":"pedro@teste.local",
+                         "admin":false,"utilizador":true,"recebeNotificacoes":true}""")
+            .when().post("/api/usuarios").then().statusCode(200);
+
+        String tokenPedro = given().contentType(ContentType.JSON)
+                .body("""
+                        {"login":"pedro.filho","senha":"12345678"}""")
+            .when().post("/api/auth/login").then().extract().path("token");
+        tokenPedro = given().contentType(ContentType.JSON).auth().oauth2(tokenPedro)
+                .body("""
+                        {"senhaAtual":"12345678","senhaNova":"senhaDoPedro1"}""")
+            .when().put("/api/me/senha").then().extract().path("token");
+
+        given().auth().oauth2(tokenPedro).when().delete("/api/faturas/1")
+            .then().statusCode(403);
+    }
+
+    @Test
+    @DisplayName("a chave PIX vem da configuração, para a tela mostrar e copiar")
+    void chavePix() {
+        given().auth().oauth2(trocarESeguir()).when().get("/api/pix")
+            .then().statusCode(200)
+                .body("tipo", equalTo("CPF"))
+                .body("chave", notNullValue())
+                .body("titular", notNullValue());
+    }
+
+    @Test
+    @DisplayName("minhas-contas devolve os blocos de encargo e a chave PIX")
+    void minhasContasTemEncargosEPix() {
+        String admin = trocarESeguir();
+        String csv = """
+                pagina;coluna;data;estabelecimento;parcela;valor
+                2;1;08/07;PADARIA DO BAIRRO;;120,00
+                2;1;10/07;ANUIDADE DIFERENCIADA;;30,00
+                """;
+        int id = given().auth().oauth2(admin)
+                .multiPart("arquivo", "fatura.csv", csv.getBytes())
+                .multiPart("competencia", "2026-08")
+                .multiPart("valorTotal", "150,00")
+            .when().post("/api/faturas")
+            .then().statusCode(200).extract().path("id");
+
+        given().auth().oauth2(admin).when().get("/api/faturas/" + id + "/minhas-contas")
+            .then().statusCode(200)
+                .body("pix.chave", notNullValue())
+                .body("total", notNullValue())
+                // A anuidade não entra no pool: ela é rateada, não reivindicada.
+                .body("pool.size()", equalTo(1));
     }
 
     @Test

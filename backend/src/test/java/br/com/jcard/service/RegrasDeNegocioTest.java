@@ -51,8 +51,11 @@ class RegrasDeNegocioTest {
     @BeforeEach
     @Transactional
     void limpar() {
+        // Ordem importa: filho antes do pai, senão a FK barra o delete.
+        br.com.jcard.model.ComprovantePagamento.deleteAll();
         Acerto.deleteAll();
         br.com.jcard.model.Reivindicacao.deleteAll();
+        br.com.jcard.model.DivisaoLancamento.deleteAll();
         CompromissoParcelado.deleteAll();
         Lancamento.deleteAll();
         Fatura.deleteAll();

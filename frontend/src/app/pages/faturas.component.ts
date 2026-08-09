@@ -3,6 +3,7 @@ import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
+import { ToastService } from '../core/toast.service';
 import { Fatura } from '../core/models';
 
 @Component({
@@ -57,6 +58,10 @@ import { Fatura } from '../core/models';
               <a class="btn btn-secundario" [routerLink]="['/admin/faturas', f.id]">
                 Conciliação
               </a>
+              @if (f.status !== 'FECHADA') {
+                <button type="button" class="btn-perigo" [disabled]="excluindo() === f.id"
+                        (click)="excluir(f)">Excluir</button>
+              }
             }
           </div>
         </article>
@@ -66,12 +71,46 @@ import { Fatura } from '../core/models';
 })
 export class FaturasComponent {
   private api = inject(ApiService);
+  private toast = inject(ToastService);
   auth = inject(AuthService);
 
   faturas = signal<Fatura[]>([]);
   carregando = signal(true);
+  excluindo = signal<number | null>(null);
 
   constructor() {
+    this.carregar();
+  }
+
+  /**
+   * Apagar a fatura é a saída para o arquivo errado ou a competência trocada —
+   * o hash único impede simplesmente reimportar por cima.
+   *
+   * <p>A confirmação diz o que vai embora junto, porque some tudo: lançamentos,
+   * quem assumiu o quê e os acertos calculados.
+   */
+  excluir(f: Fatura): void {
+    const mes = new Date(f.competencia).toLocaleDateString('pt-BR',
+      { month: '2-digit', year: 'numeric' });
+    const ok = confirm(
+      `Excluir a fatura de ${mes}?\n\n`
+      + `Somem os ${f.totalLancamentos} lançamentos, tudo que as pessoas já assumiram `
+      + 'e os acertos calculados. Não dá para desfazer.');
+    if (!ok) {
+      return;
+    }
+    this.excluindo.set(f.id);
+    this.api.excluirFatura(f.id).subscribe({
+      next: () => {
+        this.toast.ok('Fatura excluída.');
+        this.excluindo.set(null);
+        this.carregar();
+      },
+      error: () => this.excluindo.set(null),
+    });
+  }
+
+  private carregar(): void {
     this.api.faturas().subscribe({
       next: (f) => { this.faturas.set(f); this.carregando.set(false); },
       error: () => this.carregando.set(false),

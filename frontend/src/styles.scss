@@ -130,6 +130,64 @@ h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
   .valor.credito { color: var(--ok); }
 }
 
+/* --------------------------------------------------------- conta dividida -- */
+
+/* As partes de uma conta rachada, abaixo da descrição do lançamento. */
+.partes {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--texto-suave);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-divisao {
+  background: #f7f9fb;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 0.9rem;
+  margin: 0 0 0.75rem;
+
+  .linha-parte {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.3rem 0;
+
+    label { margin: 0; flex: 1; font-weight: 500; }
+    /* o campo de valor não pode espremer o nome no celular */
+    input[type="number"] { width: 8.5rem; margin: 0; text-align: right; }
+  }
+
+  .somatorio {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--borda);
+    font-variant-numeric: tabular-nums;
+
+    &.erro { color: var(--erro); }
+    &.ok-texto { color: var(--ok); }
+  }
+}
+
+/* ------------------------------------------------------------------ PIX -- */
+
+.pix {
+  background: #e6f7f5;
+  border: 1px solid #bfe6e1;
+  border-radius: var(--raio);
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1rem;
+
+  .chave {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    /* quebra em telas estreitas em vez de estourar o cartão */
+    word-break: break-all;
+  }
+}
+
 /* ------------------------------------------------------------ etiquetas -- */
 
 .tag {

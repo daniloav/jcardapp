@@ -3,7 +3,7 @@
 export type StatusFatura =
   | 'IMPORTADA' | 'DIVERGENTE' | 'EM_AVALIACAO' | 'CONCILIADA' | 'FECHADA';
 
-export type StatusAcerto = 'ABERTO' | 'INFORMADO' | 'CONFIRMADO';
+export type StatusAcerto = 'ABERTO' | 'ACEITO' | 'INFORMADO' | 'CONFIRMADO';
 
 export type TipoLancamento =
   | 'COMPRA' | 'ESTORNO' | 'ENCARGO' | 'PAGAMENTO' | 'IOF' | 'ANUIDADE' | 'AJUSTE';
@@ -44,6 +44,19 @@ export interface Fatura {
   emConflito: number;
 }
 
+/** Só id e nome: o que o seletor de divisão precisa. */
+export interface Pessoa {
+  id: number;
+  nome: string;
+}
+
+/** A parte de uma pessoa numa conta rachada. */
+export interface Parte {
+  usuarioId: number;
+  usuarioNome: string;
+  valor: number;
+}
+
 export interface Lancamento {
   id: number;
   dataCompra: string;
@@ -58,6 +71,13 @@ export interface Lancamento {
   responsavelNome: string | null;
   origemAtribuicao: OrigemAtribuicao | null;
   meu: boolean;
+  /**
+   * Quanto DESTE lançamento é de quem está olhando: o valor cheio quando ele é
+   * o único responsável, a fatia quando a conta é dividida ou é um encargo.
+   */
+  minhaParte: number | null;
+  /** As partes, quando a conta é rachada. Vazio quando é de uma pessoa só. */
+  divisao: Parte[];
   /** Só vem preenchido na fila de conflitos do admin. */
   disputantes: string[] | null;
 }
@@ -70,9 +90,19 @@ export interface Acerto {
   usuarioNome: string;
   valorDevido: number;
   status: StatusAcerto;
+  aceitoEm: string | null;
+  pagoEm: string | null;
   informadoEm: string | null;
   confirmadoEm: string | null;
   observacao: string | null;
+  temComprovante: boolean;
+}
+
+/** A chave para onde o acerto é pago. Vem da configuração do backend. */
+export interface Pix {
+  tipo: string;
+  chave: string;
+  titular: string;
 }
 
 export interface MinhasContas {
@@ -80,8 +110,13 @@ export interface MinhasContas {
   /** Lançamentos sem dono — o que dá para assumir. */
   pool: Lancamento[];
   meus: Lancamento[];
+  /** IOF, anuidade e afins, já com a fatia que coube a quem está olhando. */
+  encargos: Lancamento[];
+  totalCompras: number;
+  totalEncargos: number;
   total: number;
   acerto: Acerto | null;
+  pix: Pix;
 }
 
 export interface Cartao {

@@ -92,13 +92,41 @@ public class Lancamento extends EntidadeBase {
                 faturaId, List.of(TipoLancamento.COMPRA, TipoLancamento.ESTORNO));
     }
 
+    /**
+     * O que é da pessoa: o que ela assumiu sozinha <b>e</b> o que ela divide com
+     * outras. Uma conta dividida aparece para todos os participantes, cada um
+     * vendo a própria parte.
+     */
     public static List<Lancamento> deUsuarioNaFatura(Long faturaId, Long usuarioId) {
-        return list("fatura.id = ?1 and responsavel.id = ?2 order by dataCompra, id", faturaId, usuarioId);
+        return list("""
+                from Lancamento l
+                where l.fatura.id = ?1
+                  and ( l.responsavel.id = ?2
+                        or exists (select 1 from DivisaoLancamento d
+                                   where d.lancamento = l and d.usuario.id = ?2) )
+                order by l.dataCompra, l.id
+                """, faturaId, usuarioId);
     }
 
-    /** Tudo que ainda não tem dono, inclusive encargos — usado na conciliação. */
+    /**
+     * O que ainda não tem dono <b>e</b> poderia ter — encargo não entra, porque
+     * ele não é de ninguém em particular: é rateado entre quem usou o cartão.
+     */
     public static List<Lancamento> semResponsavel(Long faturaId) {
-        return list("fatura.id = ?1 and responsavel is null", faturaId);
+        return list("fatura.id = ?1 and responsavel is null and tipo not in ?2",
+                faturaId, tiposRateaveis());
+    }
+
+    /** Encargos da fatura: IOF, anuidade, juros, ajustes. Sempre rateados. */
+    public static List<Lancamento> encargosDaFatura(Long faturaId) {
+        return list("fatura.id = ?1 and tipo in ?2 order by dataCompra, id",
+                faturaId, tiposRateaveis());
+    }
+
+    private static List<TipoLancamento> tiposRateaveis() {
+        return java.util.Arrays.stream(TipoLancamento.values())
+                .filter(TipoLancamento::rateavel)
+                .toList();
     }
 
     // ----------------------------------------------------------- comportamento --
@@ -122,5 +150,10 @@ public class Lancamento extends EntidadeBase {
         this.responsavel = null;
         this.origemAtribuicao = null;
         this.atribuidoEm = null;
+    }
+
+    /** Tem partes gravadas? Então é a divisão que manda no rateio, não o responsável. */
+    public boolean dividido() {
+        return DivisaoLancamento.count("lancamento.id", id) > 0;
     }
 }

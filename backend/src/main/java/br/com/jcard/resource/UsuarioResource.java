@@ -72,4 +72,22 @@ public class UsuarioResource {
     public List<Responses.Usuario> utilizadores() {
         return Usuario.utilizadoresAtivos().stream().map(Responses.Usuario::de).toList();
     }
+
+    /**
+     * Só id e nome, para o utilizador comum escolher com quem racha a conta.
+     *
+     * <p>Existe separado de {@link #utilizadores()} porque aquele devolve login,
+     * e-mail e as flags de papel — informação de cadastro que não tem por que
+     * circular só para preencher um seletor de divisão.
+     */
+    @GET
+    @Path("/pessoas")
+    @RolesAllowed({TokenService.ADMIN, TokenService.UTILIZADOR})
+    @Transactional
+    public List<Responses.Pessoa> pessoas() {
+        logado.exigirSenhaTrocada();
+        return Usuario.utilizadoresAtivos().stream()
+                .map(u -> new Responses.Pessoa(u.id, u.nome))
+                .toList();
+    }
 }

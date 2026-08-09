@@ -1,6 +1,7 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, Input, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ToastService } from '../core/toast.service';
@@ -95,13 +96,29 @@ import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from 
                   <td class="num">{{ a.valorDevido | currency: 'BRL' }}</td>
                   <td>
                     <span class="tag" [class.ok]="a.status === 'CONFIRMADO'"
-                          [class.alerta]="a.status === 'INFORMADO'">
+                          [class.alerta]="a.status === 'INFORMADO' || a.status === 'ACEITO'">
                       {{ rotuloAcerto(a.status) }}
                     </span>
+                    @if (a.pagoEm) {
+                      <div class="meta">pago em {{ a.pagoEm | date: 'dd/MM/yyyy' }}</div>
+                    }
+                    @if (a.observacao) {
+                      <div class="meta">{{ a.observacao }}</div>
+                    }
                   </td>
                   <td>
+                    @if (a.temComprovante) {
+                      <button type="button" class="btn-texto" (click)="verComprovante(a)">
+                        Ver comprovante
+                      </button>
+                    }
                     @if (a.status !== 'CONFIRMADO') {
                       <button type="button" (click)="confirmar(a)">Recebi</button>
+                      @if (!a.temComprovante) {
+                        <div class="meta">
+                          sem comprovante — a pessoa ainda não declarou o pagamento
+                        </div>
+                      }
                     } @else {
                       <button type="button" class="btn-secundario" (click)="reabrir(a)">
                         Reabrir
@@ -152,6 +169,19 @@ import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from 
         }
       </div>
 
+      @if (d.fatura.status !== 'FECHADA') {
+        <h2>Excluir</h2>
+        <div class="cartao">
+          <p class="meta">
+            Para o arquivo errado ou a competência trocada: como o app rejeita
+            reimportar a mesma fatura (o hash é único), a saída é apagar e subir
+            de novo. Somem os lançamentos, o que as pessoas assumiram e os acertos.
+          </p>
+          <button type="button" class="btn-perigo" [disabled]="excluindo()"
+                  (click)="excluir(d.fatura)">Excluir esta fatura</button>
+        </div>
+      }
+
       <h2>Todos os lançamentos ({{ d.lancamentos.length }})</h2>
       <div class="rolavel">
         <table>
@@ -171,9 +201,20 @@ import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from 
                 </td>
                 <td>{{ l.final4 ?? '—' }}</td>
                 <td>
-                  {{ l.responsavelNome ?? '—' }}
-                  @if (l.origemAtribuicao === 'HERDADA_PARCELA') {
-                    <span class="tag info">herdada</span>
+                  @if (l.divisao.length > 0) {
+                    <span class="tag info">dividida</span>
+                    <ul class="partes">
+                      @for (p of l.divisao; track p.usuarioId) {
+                        <li>{{ p.usuarioNome }} — {{ p.valor | currency: 'BRL' }}</li>
+                      }
+                    </ul>
+                  } @else if (rateado(l)) {
+                    <span class="tag">rateado entre quem usou</span>
+                  } @else {
+                    {{ l.responsavelNome ?? '—' }}
+                    @if (l.origemAtribuicao === 'HERDADA_PARCELA') {
+                      <span class="tag info">herdada</span>
+                    }
                   }
                 </td>
                 <td class="num">{{ l.valor | currency: 'BRL' }}</td>
@@ -190,10 +231,12 @@ import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from 
 export class AdminFaturaComponent {
   private api = inject(ApiService);
   private toast = inject(ToastService);
+  private router = inject(Router);
 
   detalhe = signal<DetalheFatura | null>(null);
   conflitos = signal<Lancamento[]>([]);
   utilizadores = signal<Usuario[]>([]);
+  excluindo = signal(false);
   escolha: Record<number, number | null> = {};
 
   private faturaId = 0;
@@ -212,7 +255,48 @@ export class AdminFaturaComponent {
   }
 
   rotuloAcerto(s: string): string {
-    return { ABERTO: 'a pagar', INFORMADO: 'informou que pagou', CONFIRMADO: 'recebido' }[s] ?? s;
+    return {
+      ABERTO: 'a conferir',
+      ACEITO: 'aceitou o valor',
+      INFORMADO: 'informou que pagou',
+      CONFIRMADO: 'recebido',
+    }[s] ?? s;
+  }
+
+  /** Encargo não tem dono: é dividido entre todos que usaram o cartão no mês. */
+  rateado(l: Lancamento): boolean {
+    return l.tipo !== 'COMPRA' && l.tipo !== 'ESTORNO' && l.tipo !== 'PAGAMENTO';
+  }
+
+  /**
+   * Abre o comprovante numa aba nova. Vai como blob porque o endpoint exige o
+   * JWT — um link direto voltaria 401.
+   */
+  verComprovante(a: Acerto): void {
+    this.api.comprovante(a.id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        // Revoga depois de a aba ter carregado; imediato cancelaria o download.
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      },
+      error: () => this.toast.erro('Não consegui abrir o comprovante.'),
+    });
+  }
+
+  excluir(f: DetalheFatura['fatura']): void {
+    const ok = confirm(
+      'Excluir esta fatura?\n\n'
+      + `Somem os ${f.totalLancamentos} lançamentos, tudo que as pessoas já assumiram `
+      + 'e os acertos calculados. Não dá para desfazer.');
+    if (!ok) {
+      return;
+    }
+    this.excluindo.set(true);
+    this.api.excluirFatura(f.id).subscribe({
+      next: () => { this.toast.ok('Fatura excluída.'); this.router.navigate(['/faturas']); },
+      error: () => this.excluindo.set(false),
+    });
   }
 
   arbitrar(l: Lancamento): void {

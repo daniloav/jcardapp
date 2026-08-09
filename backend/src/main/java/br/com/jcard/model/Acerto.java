@@ -9,6 +9,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -39,6 +40,14 @@ public class Acerto extends EntidadeBase {
 
     @Column(length = 400)
     public String observacao;
+
+    /** Quando a pessoa conferiu o somatório e concordou com ele. */
+    @Column(name = "aceito_em")
+    public LocalDateTime aceitoEm;
+
+    /** Data do PIX/transferência, informada por quem pagou. */
+    @Column(name = "pago_em")
+    public LocalDate pagoEm;
 
     @Column(name = "informado_em")
     public LocalDateTime informadoEm;
