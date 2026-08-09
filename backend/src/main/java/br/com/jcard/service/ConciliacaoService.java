@@ -15,7 +15,6 @@ import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -32,7 +31,9 @@ import org.jboss.logging.Logger;
  * <p>A (1) valida a <b>leitura</b> do PDF: se não bate, o parser perdeu ou
  * duplicou linha e a fatura vai para {@link StatusFatura#DIVERGENTE} — melhor
  * travar do que ratear em cima de dado errado. A (2) valida o <b>rateio</b>: o
- * que ninguém reivindicou é do titular, então a soma sempre reproduz o total.
+ * que ninguém reivindicou é do titular, e tanto a conta dividida quanto o
+ * encargo rateado distribuem o valor cheio, sem perder centavo — então a soma
+ * sempre reproduz o total. Quem monta esse rateio é o {@link RateioService}.
  */
 @ApplicationScoped
 public class ConciliacaoService {
@@ -41,6 +42,9 @@ public class ConciliacaoService {
 
     @Inject
     AuditoriaService auditoria;
+
+    @Inject
+    RateioService rateio;
 
     /**
      * Recalcula {@code valorLancado} e decide se a fatura pode seguir.
@@ -65,21 +69,18 @@ public class ConciliacaoService {
     }
 
     /**
-     * Reprojeta os acertos a partir de quem é dono do quê.
+     * Reprojeta os acertos a partir do rateio.
      *
      * <p>Roda a cada reivindicação para que o utilizador veja o "quanto devo"
-     * atualizado antes do fechamento. A sobra sem dono é sempre do titular.
+     * atualizado antes do fechamento. A sobra sem dono é sempre do titular, e os
+     * encargos são divididos entre quem usou o cartão — ver {@link RateioService}.
      */
     @Transactional
     public List<Acerto> recalcularAcertos(Long faturaId) {
         Fatura fatura = carregar(faturaId);
         Usuario titular = titular();
 
-        Map<Long, BigDecimal> porUsuario = new HashMap<>();
-        for (Lancamento l : Lancamento.daFatura(fatura.id)) {
-            Usuario dono = l.responsavel != null ? l.responsavel : titular;
-            porUsuario.merge(dono.getId(), l.valor, BigDecimal::add);
-        }
+        Map<Long, BigDecimal> porUsuario = rateio.totaisPorUsuario(fatura, titular);
 
         List<Acerto> acertos = new ArrayList<>();
         for (Map.Entry<Long, BigDecimal> e : porUsuario.entrySet()) {
@@ -92,7 +93,17 @@ public class ConciliacaoService {
             // Não mexe em quem já pagou: reabrir um acerto confirmado apagaria a
             // confirmação do admin. Divergência aqui é caso de arbitragem manual.
             if (a.status != StatusAcerto.CONFIRMADO) {
+                boolean mudou = a.valorDevido.compareTo(e.getValue()) != 0;
                 a.valorDevido = e.getValue();
+                // Aceitar é concordar com UM valor. Se ele mudou (o admin arbitrou,
+                // alguém dividiu uma conta), o aceite anterior não vale mais e a
+                // pessoa precisa conferir de novo antes de pagar. Quem já declarou
+                // o pagamento fica como está: o dinheiro saiu, e a diferença é
+                // assunto do admin, não motivo para apagar o comprovante.
+                if (mudou && a.status == StatusAcerto.ACEITO) {
+                    a.status = StatusAcerto.ABERTO;
+                    a.aceitoEm = null;
+                }
             }
             a.persist();
             acertos.add(a);
@@ -125,6 +136,9 @@ public class ConciliacaoService {
         }
 
         Usuario titular = titular();
+        // Só o que era reivindicável e ninguém quis. Encargo NÃO entra aqui:
+        // ele não tem dono, é rateado entre quem usou o cartão — deixá-lo sem
+        // responsável é justamente o que mantém o rateio valendo.
         List<Lancamento> orfaos = Lancamento.semResponsavel(fatura.id);
         for (Lancamento l : orfaos) {
             l.atribuirA(titular, OrigemAtribuicao.ADMIN);

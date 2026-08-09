@@ -1,6 +1,7 @@
 package br.com.jcard.service;
 
 import br.com.jcard.model.AcaoAuditoria;
+import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Lancamento;
 import br.com.jcard.model.OrigemAtribuicao;
 import br.com.jcard.model.Reivindicacao;
@@ -70,6 +71,9 @@ public class ReivindicacaoService {
                 anterior.persist();
             }
             atribuicao.encerrarCompromisso(l);
+            // A divisão pertencia à atribuição contestada: quem estava na mesa é
+            // parte do que se está discutindo. Fica para refazer depois da decisão.
+            DivisaoLancamento.apagarDo(l.id);
             l.liberar();
             l.persist();
         }
@@ -88,10 +92,22 @@ public class ReivindicacaoService {
         if (minha != null) {
             minha.delete();
         }
-        if (l.responsavel != null && l.responsavel.getId().equals(quem.id)) {
+        boolean souResponsavel = l.responsavel != null && l.responsavel.getId().equals(quem.id);
+        boolean tenhoParte = DivisaoLancamento.count(
+                "lancamento.id = ?1 and usuario.id = ?2", lancamentoId, quem.id) > 0;
+
+        if (souResponsavel) {
+            DivisaoLancamento.apagarDo(lancamentoId);
             atribuicao.encerrarCompromisso(l);
             l.liberar();
             l.persist();
+        } else if (tenhoParte) {
+            // Recusar uma parte derruba a divisão inteira, mas o lançamento
+            // continua com quem o assumiu: a conta volta a ser dele por inteiro e
+            // ele refaz a divisão com quem concorda. Ninguém carrega uma cobrança
+            // que não aceitou, e ninguém perde o lançamento por decisão de outro.
+            DivisaoLancamento.apagarDo(lancamentoId);
+            notificacao.parteRecusada(l, quem);
         }
 
         // Se sobrou exatamente um pretendente, ele leva sem precisar do admin.
@@ -112,6 +128,11 @@ public class ReivindicacaoService {
             throw new WebApplicationException(
                     "A fatura não está mais em avaliação.", 409);
         }
+        if (!l.tipo.reivindicavel()) {
+            throw new WebApplicationException(
+                    "Encargos são rateados entre todos que usaram o cartão — "
+                    + "não há como atribuí-los a uma pessoa.", 409);
+        }
         Usuario vencedor = Usuario.findById(vencedorId);
         if (vencedor == null || !vencedor.ativo) {
             throw new WebApplicationException("Utilizador inválido.", 400);
@@ -126,6 +147,8 @@ public class ReivindicacaoService {
             r.persist();
         }
 
+        // A divisão anterior era de quem perdeu a disputa; quem ganhou refaz a sua.
+        DivisaoLancamento.apagarDo(lancamentoId);
         l.atribuirA(vencedor, OrigemAtribuicao.ADMIN);
         l.persist();
         atribuicao.registrarCompromisso(l, vencedor);

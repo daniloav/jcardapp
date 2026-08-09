@@ -3,6 +3,7 @@ package br.com.jcard.resource;
 import br.com.jcard.dto.Requests;
 import br.com.jcard.dto.Responses;
 import br.com.jcard.model.Acerto;
+import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
 import br.com.jcard.model.Reivindicacao;
@@ -12,6 +13,8 @@ import br.com.jcard.security.UsuarioLogado;
 import br.com.jcard.service.AcertoService;
 import br.com.jcard.service.ConciliacaoService;
 import br.com.jcard.service.FaturaImportService;
+import br.com.jcard.service.PixConfig;
+import br.com.jcard.service.RateioService;
 import br.com.jcard.service.ReivindicacaoService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -58,6 +61,12 @@ public class FaturaResource {
 
     @Inject
     AcertoService acertos;
+
+    @Inject
+    RateioService rateio;
+
+    @Inject
+    PixConfig pix;
 
     @Inject
     UsuarioLogado logado;
@@ -125,16 +134,23 @@ public class FaturaResource {
         return Map.of(
                 "fatura", resumo(f),
                 "lancamentos", Lancamento.daFatura(id).stream()
-                        .map(l -> Responses.LancamentoResponse.de(l, eu.id)).toList(),
+                        .map(l -> Responses.LancamentoResponse.de(l, eu.id)
+                                .comDivisao(DivisaoLancamento.doLancamento(l.id), eu.id))
+                        .toList(),
                 "acertos", Acerto.daFatura(id).stream()
                         .map(Responses.AcertoResponse::de).toList());
     }
 
     /**
-     * A tela do utilizador: o que está sem dono e o que já é dele.
+     * A tela do utilizador: o pool, o que já é dele e a fatia dele nos encargos.
      *
      * <p>Não devolve o que outra pessoa assumiu — é decisão de privacidade: cada
-     * um vê as próprias contas e o pool, nada além.
+     * um vê as próprias contas e o pool, nada além. A exceção é a conta
+     * dividida: aí os participantes se veem, porque estavam na mesma mesa.
+     *
+     * <p>Os valores saem do mesmo {@code RateioService} que alimenta a
+     * conciliação. É de propósito: o número que a pessoa confere aqui tem de ser,
+     * ao centavo, o número que ela vai pagar.
      */
     @GET
     @Path("/{id}/minhas-contas")
@@ -146,18 +162,43 @@ public class FaturaResource {
         List<Responses.LancamentoResponse> pool = Lancamento.poolDaFatura(id).stream()
                 .map(l -> Responses.LancamentoResponse.de(l, eu.id).anonimo())
                 .toList();
-        List<Lancamento> meus = Lancamento.deUsuarioNaFatura(id, eu.id);
-        BigDecimal total = meus.stream()
-                .map(l -> l.valor)
+
+        List<Responses.LancamentoResponse> meus = Lancamento.deUsuarioNaFatura(id, eu.id).stream()
+                .map(l -> Responses.LancamentoResponse.de(l, eu.id)
+                        .comDivisao(DivisaoLancamento.doLancamento(l.id), eu.id))
+                .toList();
+        BigDecimal totalCompras = meus.stream()
+                .map(Responses.LancamentoResponse::minhaParte)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // A fatia dos encargos vem do rateio da fatura inteira: dividir aqui de
+        // novo daria outro arredondamento e a tela mostraria centavo a menos.
+        Map<Long, BigDecimal> meusEncargos = rateio.ratear(f, conciliacao.titular()).stream()
+                .filter(p -> p.usuarioId().equals(eu.id))
+                .collect(java.util.stream.Collectors.toMap(
+                        RateioService.Parte::lancamentoId, RateioService.Parte::valor,
+                        BigDecimal::add));
+        List<Responses.LancamentoResponse> encargos = Lancamento.encargosDaFatura(id).stream()
+                .filter(l -> meusEncargos.containsKey(l.id))
+                .map(l -> Responses.LancamentoResponse.de(l, eu.id)
+                        .comMinhaParte(meusEncargos.get(l.id)))
+                .toList();
+        BigDecimal totalEncargos = encargos.stream()
+                .map(Responses.LancamentoResponse::minhaParte)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Acerto a = Acerto.de(id, eu.id);
         return new Responses.MinhasContas(
                 resumo(f),
                 pool,
-                meus.stream().map(l -> Responses.LancamentoResponse.de(l, eu.id)).toList(),
-                total,
-                a == null ? null : Responses.AcertoResponse.de(a));
+                meus,
+                encargos,
+                totalCompras,
+                totalEncargos,
+                totalCompras.add(totalEncargos),
+                a == null ? null : Responses.AcertoResponse.de(a),
+                pix.atual());
     }
 
     /** Fila de arbitragem: lançamentos com dois ou mais pretendentes. */
@@ -202,28 +243,54 @@ public class FaturaResource {
 
     // ------------------------------------------------------------- pagamento --
 
-    /** O utilizador declara que pagou a parte dele nesta fatura. */
+    /** "Conferi o meu total e concordo com ele." Libera o formulário de pagamento. */
     @POST
-    @Path("/{id}/pagamento")
-    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("/{id}/aceite")
     @Transactional
-    public Responses.AcertoResponse informarPagamento(@PathParam("id") Long id,
-                                                      Requests.InformarPagamento req) {
-        Usuario eu = logado.exigirSenhaTrocada();
-        return Responses.AcertoResponse.de(
-                acertos.informarPagamento(id, eu, req == null ? null : req.observacao()));
+    public Responses.AcertoResponse aceitar(@PathParam("id") Long id) {
+        return Responses.AcertoResponse.de(acertos.aceitar(id, logado.exigirSenhaTrocada()));
     }
 
+    /**
+     * O utilizador declara que pagou a parte dele nesta fatura.
+     *
+     * <p>É multipart porque o comprovante do PIX é <b>obrigatório</b>: sem ele
+     * não existe registro de que o dinheiro saiu, e a confirmação do admin viraria
+     * palavra contra palavra.
+     */
+    @POST
+    @Path("/{id}/pagamento")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Transactional
+    public Responses.AcertoResponse informarPagamento(@PathParam("id") Long id,
+                                                      @RestForm("comprovante") FileUpload comprovante,
+                                                      @RestForm String pagoEm,
+                                                      @RestForm String observacao) {
+        Usuario eu = logado.exigirSenhaTrocada();
+        if (comprovante == null) {
+            throw new WebApplicationException(
+                    "Anexe o comprovante do PIX ou da transferência.", 400);
+        }
+        byte[] conteudo;
+        try {
+            conteudo = Files.readAllBytes(comprovante.uploadedFile());
+        } catch (IOException e) {
+            throw new WebApplicationException("Falha ao ler o comprovante enviado.", 400);
+        }
+        return Responses.AcertoResponse.de(acertos.informarPagamento(
+                id, eu, dataDe(pagoEm), observacao, conteudo,
+                comprovante.fileName(), comprovante.contentType()));
+    }
+
+    /**
+     * Apaga a fatura — a saída para o arquivo errado ou a competência trocada,
+     * já que o hash único impede reimportar por cima.
+     */
     @DELETE
     @Path("/{id}")
     @RolesAllowed(TokenService.ADMIN)
     public void excluir(@PathParam("id") Long id) {
-        Fatura f = buscar(id);
-        if (f.status == br.com.jcard.model.StatusFatura.FECHADA) {
-            throw new WebApplicationException(
-                    "Fatura fechada não pode ser excluída — ela é o histórico do acerto.", 409);
-        }
-        f.delete();
+        importacao.excluir(id, logado.get());
     }
 
     // --------------------------------------------------------------- apoio --
@@ -241,6 +308,18 @@ public class FaturaResource {
         int pool = Lancamento.poolDaFatura(f.id).size();
         int conflitos = Reivindicacao.lancamentosEmConflito(f.id).size();
         return Responses.FaturaResponse.de(f, total, pool, conflitos);
+    }
+
+    /** Data do pagamento; ausente ou ilegível vira "hoje", que é o caso comum. */
+    private LocalDate dataDe(String data) {
+        if (data == null || data.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(data.strip());
+        } catch (RuntimeException e) {
+            throw new WebApplicationException("Data do pagamento inválida: use AAAA-MM-DD.", 400);
+        }
     }
 
     private LocalDate mesDe(String competencia) {

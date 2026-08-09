@@ -1,6 +1,7 @@
 package br.com.jcard.service;
 
 import br.com.jcard.model.AcaoAuditoria;
+import br.com.jcard.model.CompromissoParcelado;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
 import br.com.jcard.model.OrigemAtribuicao;
@@ -190,6 +191,43 @@ public class FaturaImportService {
         conciliacao.recalcularAcertos(fatura.id);
         auditoria.registrar(quem, AcaoAuditoria.ATUALIZAR, "Fatura", fatura.id, "reprocessada");
         return fatura;
+    }
+
+    /**
+     * Apaga a fatura inteira — a saída para quando o arquivo errado subiu, ou a
+     * competência foi digitada trocada, e reimportar esbarra no hash único.
+     *
+     * <p>Fatura <b>fechada</b> não é apagada: ela é o registro de que as pessoas
+     * pagaram. Se o histórico do acerto some, some também a única prova de quem
+     * quitou o quê.
+     *
+     * <p>Lançamentos, reivindicações, divisões, acertos e comprovantes caem por
+     * cascata no banco. O que <b>não</b> cai sozinho é o compromisso parcelado:
+     * a FK dele é {@code ON DELETE SET NULL}, então ele sobreviveria órfão e
+     * continuaria atribuindo as parcelas seguintes a partir de uma fatura que
+     * não existe mais. Por isso o encerramos aqui, explicitamente.
+     */
+    @Transactional
+    public void excluir(Long faturaId, Usuario quem) {
+        Fatura f = Fatura.findById(faturaId);
+        if (f == null) {
+            throw new WebApplicationException("Fatura não encontrada.", 404);
+        }
+        if (f.status == br.com.jcard.model.StatusFatura.FECHADA) {
+            throw new WebApplicationException(
+                    "Fatura fechada não pode ser excluída — ela é o histórico do acerto.", 409);
+        }
+
+        long compromissos = CompromissoParcelado.delete(
+                "origemLancamento.id in (select l.id from Lancamento l where l.fatura.id = ?1)",
+                faturaId);
+
+        String resumo = "%s · %d lançamento(s) · %d compromisso(s) de parcelamento encerrado(s)"
+                .formatted(f.competencia, Lancamento.count("fatura.id", faturaId), compromissos);
+        f.delete();
+
+        LOG.infof("Fatura %d excluída por %s: %s", faturaId, quem.login, resumo);
+        auditoria.registrar(quem, AcaoAuditoria.EXCLUIR_FATURA, "Fatura", faturaId, resumo);
     }
 
     private Lancamento novoLancamento(Fatura fatura, LancamentoLido lido) {

@@ -66,6 +66,11 @@ export class MeusAcertosComponent {
   }
 
   rotulo(s: string): string {
-    return { ABERTO: 'a pagar', INFORMADO: 'aguardando confirmação', CONFIRMADO: 'pago' }[s] ?? s;
+    return {
+      ABERTO: 'a conferir',
+      ACEITO: 'aceito · falta pagar',
+      INFORMADO: 'aguardando confirmação',
+      CONFIRMADO: 'pago',
+    }[s] ?? s;
   }
 }

@@ -2,6 +2,8 @@ package br.com.jcard.dto;
 
 import br.com.jcard.model.Acerto;
 import br.com.jcard.model.Cartao;
+import br.com.jcard.model.ComprovantePagamento;
+import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
 import br.com.jcard.model.OrigemAtribuicao;
@@ -40,6 +42,10 @@ public final class Responses {
         }
     }
 
+    /** O mínimo para escolher alguém numa lista, sem expor dado de cadastro. */
+    public record Pessoa(Long id, String nome) {
+    }
+
     // -------------------------------------------------------------- cartão --
 
     public record CartaoResponse(Long id, String apelido, String final4, String portadorNome,
@@ -71,9 +77,20 @@ public final class Responses {
         }
     }
 
+    /** A parte de uma pessoa numa conta dividida. */
+    public record ParteResponse(Long usuarioId, String usuarioNome, BigDecimal valor) {
+        public static ParteResponse de(DivisaoLancamento d) {
+            return new ParteResponse(d.usuario.getId(), d.usuario.nome, d.valor);
+        }
+    }
+
     /**
      * Um lançamento como o utilizador vê.
      *
+     * @param minhaParte  quanto <b>deste</b> lançamento é de quem está olhando:
+     *                    o valor cheio quando ele é o responsável, a fatia dele
+     *                    quando a conta é dividida ou quando é um encargo rateado
+     * @param divisao     as partes, quando a conta é rachada; vazio caso contrário
      * @param disputantes nomes de quem reivindicou; só é preenchido para o admin
      *                    na fila de conflitos — o utilizador comum não vê quem
      *                    mais está disputando
@@ -83,7 +100,8 @@ public final class Responses {
                                      Integer parcelaAtual, Integer parcelaTotal,
                                      TipoLancamento tipo, Long responsavelId,
                                      String responsavelNome, OrigemAtribuicao origemAtribuicao,
-                                     boolean meu, List<String> disputantes) {
+                                     boolean meu, BigDecimal minhaParte,
+                                     List<ParteResponse> divisao, List<String> disputantes) {
 
         public static LancamentoResponse de(Lancamento l, Long usuarioId) {
             return new LancamentoResponse(l.id, l.dataCompra, l.descricao, l.valor,
@@ -92,13 +110,33 @@ public final class Responses {
                     l.responsavel == null ? null : l.responsavel.nome,
                     l.origemAtribuicao,
                     l.responsavel != null && l.responsavel.getId().equals(usuarioId),
-                    null);
+                    null, List.of(), null);
+        }
+
+        /** Anexa as partes e diz qual delas é de quem está olhando. */
+        public LancamentoResponse comDivisao(List<DivisaoLancamento> partes, Long usuarioId) {
+            List<ParteResponse> mapeadas = partes.stream().map(ParteResponse::de).toList();
+            BigDecimal minha = mapeadas.stream()
+                    .filter(p -> p.usuarioId().equals(usuarioId))
+                    .map(ParteResponse::valor)
+                    .findFirst()
+                    .orElse(mapeadas.isEmpty() && Boolean.TRUE.equals(meu) ? valor : null);
+            return new LancamentoResponse(id, dataCompra, descricao, valor, portadorNome,
+                    final4, parcelaAtual, parcelaTotal, tipo, responsavelId, responsavelNome,
+                    origemAtribuicao, meu || minha != null, minha, mapeadas, disputantes);
+        }
+
+        /** Usado no bloco de encargos, onde a fatia vem do rateio e não de uma divisão. */
+        public LancamentoResponse comMinhaParte(BigDecimal parte) {
+            return new LancamentoResponse(id, dataCompra, descricao, valor, portadorNome,
+                    final4, parcelaAtual, parcelaTotal, tipo, responsavelId, responsavelNome,
+                    origemAtribuicao, meu, parte, divisao, disputantes);
         }
 
         public LancamentoResponse comDisputantes(List<String> nomes) {
             return new LancamentoResponse(id, dataCompra, descricao, valor, portadorNome,
                     final4, parcelaAtual, parcelaTotal, tipo, responsavelId, responsavelNome,
-                    origemAtribuicao, meu, nomes);
+                    origemAtribuicao, meu, minhaParte, divisao, nomes);
         }
 
         /**
@@ -107,34 +145,54 @@ public final class Responses {
          */
         public LancamentoResponse anonimo() {
             return new LancamentoResponse(id, dataCompra, descricao, valor, portadorNome,
-                    final4, parcelaAtual, parcelaTotal, tipo, null, null, null, false, null);
+                    final4, parcelaAtual, parcelaTotal, tipo, null, null, null, false,
+                    null, List.of(), null);
         }
     }
 
     // -------------------------------------------------------------- acerto --
 
+    /**
+     * @param temComprovante o anexo nunca vem embutido: é binário e a lista do
+     *                       admin carrega todos os acertos da fatura de uma vez
+     */
     public record AcertoResponse(Long id, Long faturaId, LocalDate competencia,
                                  Long usuarioId, String usuarioNome, BigDecimal valorDevido,
-                                 StatusAcerto status, LocalDateTime informadoEm,
-                                 LocalDateTime confirmadoEm, String observacao) {
+                                 StatusAcerto status, LocalDateTime aceitoEm,
+                                 LocalDate pagoEm, LocalDateTime informadoEm,
+                                 LocalDateTime confirmadoEm, String observacao,
+                                 boolean temComprovante) {
         public static AcertoResponse de(Acerto a) {
             return new AcertoResponse(a.id, a.fatura.getId(), a.fatura.competencia,
                     a.usuario.getId(), a.usuario.nome, a.valorDevido, a.status,
-                    a.informadoEm, a.confirmadoEm, a.observacao);
+                    a.aceitoEm, a.pagoEm, a.informadoEm, a.confirmadoEm, a.observacao,
+                    ComprovantePagamento.existePara(a.id));
         }
     }
 
     /**
      * A tela principal do utilizador numa fatura.
      *
-     * @param pool  lançamentos sem dono — o que ele pode assumir
-     * @param meus  o que já é dele
-     * @param total quanto ele deve hoje nessa fatura
+     * @param pool          lançamentos sem dono — o que ele pode assumir
+     * @param meus          o que já é dele, cada um com a parte dele
+     * @param encargos      IOF, anuidade e afins, com a fatia que coube a ele; só
+     *                      aparecem para quem usou o cartão no mês
+     * @param totalCompras  soma das partes dele nos lançamentos
+     * @param totalEncargos a fatia dele nos encargos
+     * @param total         quanto ele deve hoje nessa fatura (a soma dos dois)
      */
     public record MinhasContas(FaturaResponse fatura,
                                List<LancamentoResponse> pool,
                                List<LancamentoResponse> meus,
+                               List<LancamentoResponse> encargos,
+                               BigDecimal totalCompras,
+                               BigDecimal totalEncargos,
                                BigDecimal total,
-                               AcertoResponse acerto) {
+                               AcertoResponse acerto,
+                               PixResponse pix) {
+    }
+
+    /** A chave para onde o dinheiro vai. Vem da configuração, não do código. */
+    public record PixResponse(String tipo, String chave, String titular) {
     }
 }

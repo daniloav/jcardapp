@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
-  Acerto, Cartao, DetalheFatura, Fatura, Lancamento, MinhasContas, Usuario,
+  Acerto, Cartao, DetalheFatura, Fatura, Lancamento, MinhasContas, Pessoa, Pix, Usuario,
 } from './models';
 
 /** Ponto único de acesso à API. Todo componente passa por aqui. */
@@ -78,15 +78,50 @@ export class ApiService {
       `/api/lancamentos/${lancamentoId}/arbitrar`, { vencedorId });
   }
 
+  /** Racha a conta. A soma das partes precisa fechar com o valor do lançamento. */
+  dividir(lancamentoId: number, partes: { usuarioId: number; valor: number }[]):
+    Observable<Lancamento> {
+    return this.http.post<Lancamento>(`/api/lancamentos/${lancamentoId}/divisao`, { partes });
+  }
+
+  juntarDivisao(lancamentoId: number): Observable<Lancamento> {
+    return this.http.delete<Lancamento>(`/api/lancamentos/${lancamentoId}/divisao`);
+  }
+
   // -------------------------------------------------------------- acertos --
 
   meusAcertos(): Observable<Acerto[]> {
     return this.http.get<Acerto[]>('/api/me/acertos');
   }
 
-  informarPagamento(faturaId: number, observacao?: string): Observable<Acerto> {
-    return this.http.post<Acerto>(
-      `/api/faturas/${faturaId}/pagamento`, { observacao: observacao ?? null });
+  pix(): Observable<Pix> {
+    return this.http.get<Pix>('/api/pix');
+  }
+
+  /** "Conferi o total e concordo." É o que libera o formulário de pagamento. */
+  aceitarValor(faturaId: number): Observable<Acerto> {
+    return this.http.post<Acerto>(`/api/faturas/${faturaId}/aceite`, {});
+  }
+
+  /** O comprovante é obrigatório — por isso multipart e não JSON. */
+  informarPagamento(faturaId: number, comprovante: File,
+                    pagoEm: string, observacao?: string): Observable<Acerto> {
+    const form = new FormData();
+    form.append('comprovante', comprovante);
+    form.append('pagoEm', pagoEm);
+    if (observacao) {
+      form.append('observacao', observacao);
+    }
+    return this.http.post<Acerto>(`/api/faturas/${faturaId}/pagamento`, form);
+  }
+
+  /**
+   * Baixa o comprovante como blob em vez de apontar um `<a href>` para a URL:
+   * o endpoint exige o JWT, que só o interceptor coloca — um link direto
+   * voltaria 401.
+   */
+  comprovante(acertoId: number): Observable<Blob> {
+    return this.http.get(`/api/acertos/${acertoId}/comprovante`, { responseType: 'blob' });
   }
 
   confirmarPagamento(acertoId: number): Observable<Acerto> {
@@ -105,6 +140,11 @@ export class ApiService {
 
   utilizadores(): Observable<Usuario[]> {
     return this.http.get<Usuario[]>('/api/usuarios/utilizadores');
+  }
+
+  /** Id e nome apenas — é o que o utilizador comum precisa para dividir uma conta. */
+  pessoas(): Observable<Pessoa[]> {
+    return this.http.get<Pessoa[]>('/api/usuarios/pessoas');
   }
 
   criarUsuario(dados: Partial<Usuario>): Observable<Usuario> {

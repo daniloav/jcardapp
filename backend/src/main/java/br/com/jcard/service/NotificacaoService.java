@@ -98,6 +98,31 @@ public class NotificacaoService {
         }
     }
 
+    /**
+     * Avisa quem dividiu a conta de que alguém recusou a parte.
+     *
+     * <p>Importa porque o lançamento volta inteiro para o organizador: ele
+     * precisa saber que o valor dele subiu, e por quê, antes de aceitar o total.
+     */
+    public void parteRecusada(Lancamento l, Usuario quemRecusou) {
+        Usuario dono = l.responsavel;
+        if (!habilitado || dono == null || !dono.recebeNotificacoes
+                || dono.email == null || dono.email.isBlank()) {
+            return;
+        }
+        String corpo = """
+                <p>Olá, %s!</p>
+                <p><strong>%s</strong> não reconheceu a parte na conta
+                <strong>%s</strong> (R$ %s, em %s).</p>
+                <p>A divisão foi desfeita e o lançamento voltou inteiro para você.
+                Se ainda for para rachar, refaça a divisão no app com quem participou.</p>
+                <p><a href="%s">Abrir o JcardApp</a></p>
+                """.formatted(primeiroNome(dono.nome), quemRecusou.nome, l.descricao,
+                valor(l.valor), l.dataCompra, appUrl);
+        dispatcher.enfileirar(Mail.withHtml(dono.email,
+                "JcardApp · uma parte da conta dividida foi recusada", corpo));
+    }
+
     /** Fatura conciliada: cada um recebe quanto ficou devendo. */
     public void acertoDisponivel(Acerto a) {
         if (!habilitado || a.usuario.email == null || a.usuario.email.isBlank()) {
@@ -114,6 +139,27 @@ public class NotificacaoService {
                 a.fatura.competencia.format(MES), valor(a.valorDevido), appUrl);
         dispatcher.enfileirar(Mail.withHtml(a.usuario.email,
                 "JcardApp · seu acerto de " + a.fatura.competencia.format(MES), corpo));
+    }
+
+    /** Avisa o admin de que alguém pagou e mandou o comprovante para conferir. */
+    public void pagamentoInformado(Acerto a) {
+        if (!habilitado) {
+            return;
+        }
+        String corpo = """
+                <p><strong>%s</strong> declarou o pagamento de <strong>R$ %s</strong>
+                da fatura de <strong>%s</strong>.</p>
+                <p>O comprovante está anexado ao acerto, na tela de conciliação.</p>
+                <p><a href="%s">Conferir no JcardApp</a></p>
+                """.formatted(a.usuario.nome, valor(a.valorDevido),
+                a.fatura.competencia.format(MES), appUrl);
+        for (Usuario admin : Usuario.<Usuario>list("admin = true and ativo = true")) {
+            if (admin.email == null || admin.email.isBlank()) {
+                continue;
+            }
+            dispatcher.enfileirar(Mail.withHtml(admin.email,
+                    "JcardApp · pagamento a conferir", corpo));
+        }
     }
 
     /** Confirmação de recebimento pelo admin — fecha o ciclo para o utilizador. */

@@ -20,12 +20,57 @@ feito sobre dado incompleto, cobrando errado de alguém.
 
 `Σ acerto.valorDevido == fatura.valorTotal`
 
-Na conciliação, tudo que ficou sem dono é atribuído ao **titular**. Se a soma
-ainda assim não fechar, a transação é abortada — nada é gravado.
+Na conciliação, todo lançamento **reivindicável** que ficou sem dono é atribuído
+ao **titular**. Se a soma ainda assim não fechar, a transação é abortada — nada é
+gravado.
 
-`ConciliacaoService.conciliar` · teste `sobraVaiParaOTitular`
+Quem monta o rateio é o `RateioService`, em três caminhos: encargo rateado (§1.4),
+conta dividida (§1.5) e lançamento comum (inteiro para o responsável, ou para o
+titular se não tiver).
 
-### 1.3 Créditos entram negativos
+`ConciliacaoService.conciliar` · `RateioService.ratear` · testes
+`sobraVaiParaOTitular`, `encargoERateadoEntreQuemUsou`, `contaDivididaEntreTres`
+
+### 1.3 A divisão em partes não perde nem inventa centavo
+
+R$ 10,00 entre três sai **3,34 + 3,33 + 3,33**, nunca três vezes 3,33.
+Arredondar cada parte isoladamente sumiria com um centavo, e aí a invariante 1.2
+cairia e o fechamento seria abortado.
+
+A sobra vai para o **titular**: quando não divide exato, o dono do cartão absorve,
+em vez de o centavo cair em quem o app achar primeiro.
+
+`RateioService.dividir` · teste `divisaoEmPartesFechaSempre`,
+`sobraDeCentavosVaiParaOTitular`
+
+### 1.4 Encargo é de todo mundo que usou o cartão
+
+`ENCARGO`, `IOF`, `ANUIDADE` e `AJUSTE` são divididos entre **todos os
+participantes** da fatura, sempre — ninguém reivindica encargo. Não há como um
+só ser o culpado pelo IOF de uma fatura que várias pessoas movimentaram.
+
+**Participante** é quem tem pelo menos um lançamento reivindicável na fatura,
+assumido sozinho ou como parte de uma conta dividida. Se ninguém assumiu nada, o
+titular fica com tudo.
+
+Por isso o encargo **continua sem responsável** depois da conciliação: dar dono a
+ele desligaria o rateio. `PAGAMENTO` (quitação da fatura anterior) fica de fora —
+é ato do titular, não gasto de ninguém.
+
+`TipoLancamento.rateavel` · `RateioService.participantes` · testes
+`encargoERateadoEntreQuemUsou`, `encargoNaoVaiParaOTitularNaConciliacao`,
+`pagamentoAnteriorFicaComOTitular`
+
+### 1.5 A soma das partes reproduz o valor do lançamento
+
+Uma conta dividida grava uma linha por pessoa em `divisao_lancamento`, e a soma
+tem de bater com o valor do lançamento **ao centavo**. Fora disso a API recusa
+com 422 dizendo quanto falta ou sobra: aceitar criaria dinheiro que a fatura não
+tem, e o erro só apareceria lá na frente, abortando o fechamento inteiro.
+
+`DivisaoService.validar` · teste `divisaoQueNaoFechaERecusada`
+
+### 1.6 Créditos entram negativos
 
 Estorno e pagamento reduzem o total. O parser inverte o sinal mesmo quando o PDF
 imprime sem ele, senão a invariante 1.1 nunca fecharia.
@@ -98,18 +143,45 @@ origem `ADMIN` e cria o compromisso se for parcelado.
 
 `ReivindicacaoService.arbitrar` · teste `adminArbitra`
 
-### 3.5 Encargos são do titular
+### 3.5 Encargos não se reivindicam nem se arbitram
 
-`ENCARGO`, `ANUIDADE`, `IOF` e `PAGAMENTO` não são reivindicáveis: são custo do
-cartão, não compra de alguém.
+`ENCARGO`, `ANUIDADE`, `IOF`, `AJUSTE` e `PAGAMENTO` não são reivindicáveis: são
+custo do cartão, não compra de alguém. Os quatro primeiros são rateados (§1.4);
+o `PAGAMENTO` fica com o titular. Nem reivindicar, nem dividir à mão, nem
+arbitrar funciona neles — os três respondem 409.
 
-`TipoLancamento.reivindicavel` · teste `encargoNaoEReivindicavel`
+`TipoLancamento.reivindicavel` · testes `encargoNaoEReivindicavel`,
+`encargoNaoSeDivide`
 
-### 3.6 Só dá para mexer com a fatura em avaliação
+### 3.6 Quem assumiu pode rachar a conta
 
-Fora de `EM_AVALIACAO`, reivindicar e desistir respondem 409.
+Quem está com o lançamento (ou o admin) divide entre duas ou mais pessoas, com
+valor livre por pessoa. Faz sentido ser ele: é quem sabe quem estava na mesa.
 
-`ReivindicacaoService.buscarReivindicavel`
+Enquanto existe divisão, ela é a **verdade** do rateio daquele lançamento, e o
+`responsavel` passa a valer só como "quem organizou" — é dele que a regra de
+parcelamento continua tirando o dono das parcelas seguintes.
+
+`DivisaoService.dividir` · testes `contaDivididaEntreTres`, `soQuemAssumiuDivide`
+
+### 3.7 Recusar uma parte derruba a divisão inteira
+
+Quem recebeu uma parte que não reconhece usa o mesmo "não foi minha": a divisão
+cai e o lançamento **volta inteiro para quem o assumiu**, que refaz a conta com
+quem concorda (e recebe e-mail avisando). É o princípio do conflito aplicado à
+divisão: ninguém carrega cobrança que não aceitou — e ninguém perde o lançamento
+por decisão de outro.
+
+Contestar a atribuição (§3.3) ou o admin arbitrar também apagam a divisão: ela
+pertencia à atribuição que está sendo discutida.
+
+`ReivindicacaoService.desistir` · teste `recusarParteDesfazADivisao`
+
+### 3.8 Só dá para mexer com a fatura em avaliação
+
+Fora de `EM_AVALIACAO`, reivindicar, desistir e dividir respondem 409.
+
+`ReivindicacaoService.buscarReivindicavel` · `DivisaoService.carregarDivisivel`
 
 ## 4. Ciclo da fatura
 
@@ -118,23 +190,60 @@ IMPORTADA ──┬─► DIVERGENTE (soma não fecha; trava aqui)
             └─► EM_AVALIACAO ──► CONCILIADA ──► FECHADA
 ```
 
-- **EM_AVALIACAO** — utilizadores reivindicam; os acertos são recalculados a cada
-  mudança para que o "quanto devo" fique sempre atualizado.
-- **CONCILIADA** — o admin fechou o rateio; a sobra foi para o titular.
+- **EM_AVALIACAO** — utilizadores reivindicam e dividem; os acertos são
+  recalculados a cada mudança para que o "quanto devo" fique sempre atualizado.
+- **CONCILIADA** — o admin fechou o rateio; a sobra reivindicável foi para o
+  titular e os valores param de mudar. É aqui que abrem o aceite e o pagamento.
 - **FECHADA** — todos os acertos confirmados. Fatura fechada não é reprocessada
   nem excluída: é o histórico do acerto.
 
 `ConciliacaoService.conciliar` / `.fechar`
 
+### 4.1 Excluir a fatura
+
+Fatura **não fechada** pode ser apagada pelo admin — é a saída para o arquivo
+errado ou a competência trocada, já que o `hash_pdf` único impede reimportar por
+cima. Lançamentos, reivindicações, divisões, acertos e comprovantes caem por
+cascata.
+
+O que **não** cai sozinho é o `CompromissoParcelado`: a FK dele é
+`ON DELETE SET NULL`, então ele sobreviveria órfão e seguiria atribuindo as
+parcelas seguintes a partir de uma fatura que não existe mais. Por isso é
+apagado explicitamente.
+
+`FaturaImportService.excluir` · testes `excluirFaturaLimpaTudo`,
+`faturaFechadaNaoEExcluida`, `excluirFatura` (HTTP)
+
 ## 5. Quitação
 
-- O utilizador declara que pagou → `INFORMADO`.
-- O admin confirma o recebimento → `CONFIRMADO` (o app não tem como saber se o
-  PIX caiu; a confirmação é sempre humana).
+```
+ABERTO ──aceite──► ACEITO ──pagamento + comprovante──► INFORMADO ──admin──► CONFIRMADO
+```
+
+- **Aceite** — a pessoa confere o somatório e concorda com ele. Só existe com a
+  fatura **conciliada**: enquanto ela está em avaliação o total ainda muda a cada
+  lançamento assumido e a cada encargo rerrateado, e aceitar um número que vai
+  mudar não significa nada. O passo existe para a discussão sobre o valor
+  acontecer **antes** de o dinheiro sair.
+- Se o valor mudar depois (o admin arbitrou, alguém dividiu uma conta), o aceite
+  é **anulado** e a pessoa confere de novo. Quem já declarou o pagamento fica como
+  está: o dinheiro saiu, e a diferença é assunto do admin — não motivo para apagar
+  o comprovante.
+- **Pagamento** — exige o **comprovante** do PIX ou da transferência (imagem ou
+  PDF, até 3 MB). Sem ele não existe registro de que o dinheiro saiu e a
+  confirmação viraria palavra contra palavra. Reenviar substitui, para quem mandou
+  o print errado.
+- A chave PIX vem da configuração (`jcard.pix.*`), não do código: é dado pessoal
+  do titular e muda de dono sem recompilar.
+- **Confirmação** é sempre do admin — o app não tem como saber se o PIX caiu.
 - Um acerto `CONFIRMADO` **não é recalculado** por mudanças posteriores — reabrir
   apagaria a confirmação do admin. Divergência aí é caso de arbitragem manual.
+- O comprovante só é visível para o dono do acerto e para o admin: é documento
+  bancário de outra pessoa.
 
-`AcertoService` · `ConciliacaoService.recalcularAcertos`
+`AcertoService` · `PixConfig` · `ConciliacaoService.recalcularAcertos` · testes
+`cicloDePagamento`, `aceiteExigeFaturaConciliada`, `pagamentoExigeAceite`,
+`comprovanteEObrigatorio`, `comprovanteEPrivado`
 
 ## 6. Pessoas
 
@@ -160,6 +269,8 @@ a operação que o disparou.
 | Fatura importada (e não divergente) | todos os utilizadores ativos |
 | Lançamentos ainda sem dono (diário, 12h BRT) | utilizadores ativos |
 | Conflito para arbitrar | admins |
+| Parte de conta dividida recusada | quem organizou a divisão |
+| Pagamento declarado (com comprovante) | admins |
 | Pagamento confirmado | o utilizador |
 | Cadastro / reset de senha | o utilizador |
 
@@ -169,7 +280,13 @@ a operação que o disparou.
 
 - O utilizador vê **o pool e as próprias contas**. O que outra pessoa assumiu não
   é exposto, e no pool o dono anterior é omitido para não influenciar a decisão.
-- O PDF da fatura **não é armazenado** — só o hash e o texto extraído.
+  A exceção é a **conta dividida**: os participantes se veem, porque estavam na
+  mesma mesa e precisam conferir a própria parte.
+- O seletor de divisão usa `/api/usuarios/pessoas`, que devolve só id e nome — a
+  lista completa (login, e-mail, papéis) continua sendo do admin.
+- O PDF da fatura **não é armazenado** — só o hash e o texto extraído. O
+  **comprovante de pagamento**, ao contrário, é guardado: ele *é* a prova do
+  acerto. Fica em tabela própria, servido com `Cache-Control: private, no-store`.
 - Toda ação relevante vira registro em `auditoria`, com o nome desnormalizado
   para sobreviver à exclusão do usuário.
 
