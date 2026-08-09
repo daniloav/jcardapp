@@ -19,13 +19,13 @@ Dispara quando o CI passa na `main`, ou manualmente (`workflow_dispatch`).
 
 ### Por que o build não está no Dockerfile
 
-As VMs são **Ampere A1, aarch64** — e, com 1 GB, nem comportariam um build. O caminho óbvio — `docker build` multi-stage
-com `--platform linux/arm64` — rodaria Maven e Node sob emulação QEMU, cerca de
-5x mais lento. E runner ARM gratuito do GitHub só existe em repositório público;
-este é privado, porque guarda dado financeiro.
+A VM é uma **e2-micro: 1 GB e uma vCPU compartilhada**. Um `docker build` com
+Maven e Node ali levaria muito tempo e provavelmente estouraria a memória.
 
-A saída aproveita que **bytecode Java e bundle JS são portáveis**: só a imagem
-base precisa ser ARM.
+O runner compila (`mvn package`, `ng build`) e os `Dockerfile.runtime` só fazem
+`COPY` do artefato pronto. Como a VM é x86_64, o build é nativo de ponta a
+ponta — sem QEMU e sem cross-compile, ao contrário da tentativa anterior na
+Oracle, cujas VMs eram ARM.
 
 ```
 job build (ubuntu-latest, amd64):
@@ -46,23 +46,23 @@ minutos. O job também envia o `.env`, o `Caddyfile` e os composes, e grava as
 chaves JWT em `./keys` a partir dos secrets — a imagem não carrega segredo e os
 tokens sobrevivem ao deploy.
 
-O deploy toca **só a `jcard-app`**. O Postgres vive na `jcard-db` e não muda a
-cada release; mexer nele no deploy seria risco sem ganho.
+Não há Postgres no compose: o banco é o Neon, gerenciado e fora da VM. Um
+deploy, portanto, nunca põe os dados em risco.
 
 ### Modo mock
 
-Enquanto `OCI_SSH_HOST` estiver vazio ou `CHANGEME`, o job de deploy só emite um
-aviso e passa. As imagens continuam sendo publicadas no GHCR. Isso mantém a
-esteira verde antes de as VMs A1 existirem.
+Enquanto `DEPLOY_SSH_HOST` estiver vazio ou `CHANGEME`, o job de deploy só emite
+um aviso e passa. As imagens continuam sendo publicadas no GHCR. Isso mantém a
+esteira verde antes de a VM existir.
 
 ## Secrets
 
 | Secret | O que é |
 |---|---|
-| `OCI_SSH_HOST` | IP público da `jcard-app` |
-| `OCI_SSH_USER` | `ubuntu` |
-| `OCI_SSH_KEY` | conteúdo de `~/.ssh/jcard_deploy` (chave **privada**) |
-| `OCI_ENV_FILE` | o `.env` de produção inteiro (ver `.env.example`) |
+| `DEPLOY_SSH_HOST` | IP público da VM |
+| `DEPLOY_SSH_USER` | `ubuntu` |
+| `DEPLOY_SSH_KEY` | conteúdo de `~/.ssh/jcard_deploy` (chave **privada**) |
+| `DEPLOY_ENV_FILE` | o `.env` de produção inteiro, incl. a string do Neon (ver `.env.example`) |
 | `JCARD_JWT_PRIVATE_KEY` / `JCARD_JWT_PUBLIC_KEY` | par RS256 de produção |
 | `JCARD_GHCR_USER` | `daniloav` |
 | `JCARD_GHCR_PAT` | PAT classic com `read:packages` (a VM usa para o `pull`) |
@@ -78,7 +78,7 @@ openssl genrsa -out privateKey.pem 2048 && openssl rsa -in privateKey.pem -pubou
 Todo build publica também a tag `<sha>`. Para voltar:
 
 ```bash
-ssh -i ~/.ssh/jcard_deploy ubuntu@<IP-app> "cd ~/jcardapp && sed -i 's/^JCARD_IMAGE_TAG=.*/JCARD_IMAGE_TAG=<sha>/' .env && docker compose -f docker-compose.app.yml --env-file .env up -d"
+ssh -i ~/.ssh/jcard_deploy ubuntu@<IP> "cd ~/jcardapp && sed -i 's/^JCARD_IMAGE_TAG=.*/JCARD_IMAGE_TAG=<sha>/' .env && docker compose --env-file .env up -d"
 ```
 
 ## Escopo do token `gh`

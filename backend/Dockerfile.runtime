@@ -1,12 +1,13 @@
 # Imagem de runtime do backend — SEM estágio de build.
 #
-# O JAR é compilado no runner do GitHub Actions (amd64, nativo e rápido) e este
-# Dockerfile só empacota o resultado numa base arm64, porque as VMs são Ampere
-# A1 (aarch64). Bytecode Java é portável: compilar sob emulação QEMU só custaria
-# tempo. Ver .github/workflows/cd.yml e docs/CICD.md.
+# O JAR é compilado no runner do GitHub Actions e este Dockerfile só empacota o
+# resultado. Como a VM (GCP e2-micro) é x86_64, o build é nativo de ponta a
+# ponta: sem QEMU, sem cross-compile. Ver .github/workflows/cd.yml.
 #
 # Espera que `mvn package` já tenha rodado (target/quarkus-app existe).
-FROM eclipse-temurin:17-jre
+# Alpine corta ~100 MB da imagem. Só é possível em amd64 — a tag 17-jre-alpine
+# não existe para arm64, o que impedia usá-la quando o alvo era a Ampere A1.
+FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
@@ -16,8 +17,9 @@ COPY target/quarkus-app/*.jar    ./
 COPY target/quarkus-app/app/     ./app/
 COPY target/quarkus-app/quarkus/ ./quarkus/
 
-RUN groupadd --system --gid 1001 appuser \
- && useradd --system --uid 1001 --gid appuser appuser \
+# Alpine usa BusyBox: addgroup/adduser em vez de groupadd/useradd.
+RUN addgroup -S -g 1001 appuser \
+ && adduser -S -u 1001 -G appuser appuser \
  && chown -R appuser:appuser /app
 USER 1001
 
@@ -27,7 +29,6 @@ EXPOSE 8080
 # precisar mexer aqui. 60% de 700 MB deixa ~280 MB para metaspace, threads e
 # buffers fora do heap — abaixo disso o container leva OOM kill.
 #
-# SerialGC, e não G1: a VM tem 1 vCPU, então um coletor paralelo só disputa CPU
-# com a própria aplicação e ainda reserva mais memória. Mesma escolha do EBD,
-# que roda neste shape em produção.
+# SerialGC, e não G1: a e2-micro tem 1 vCPU (compartilhada), então um coletor
+# paralelo só disputa CPU com a própria aplicação e ainda reserva mais memória.
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=60.0", "-XX:+UseSerialGC", "-jar", "quarkus-run.jar"]

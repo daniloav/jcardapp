@@ -39,11 +39,9 @@ bash scripts/verificar-custo-zero.sh
 
 Os tetos e o que foi feito para caber neles estão na §8.
 
-> Os *service limits* que a API da OCI reporta (A1: 41 OCPU, storage: 30 TB) são
-> só o teto que a Oracle registra — **não** provam que a conta pode ser cobrada,
-> e conta Free Tier também mostra números altos. O tipo real da conta aparece no
-> console, em **Billing → Subscriptions**. Independentemente disso, a regra aqui
-> é ficar dentro do Always Free.
+> O risco é silencioso: nenhum provedor bloqueia quando você passa do gratuito —
+> eles deixam criar e cobram. No GCP a armadilha mais fácil é a **região**: a
+> mesma `e2-micro` é grátis em `us-central1` e cobrada em qualquer outra.
 
 ## 2. Stack
 
@@ -52,8 +50,8 @@ Os tetos e o que foi feito para caber neles estão na §8.
 | Backend | Java **17** · **Quarkus 3.15** · Hibernate Panache · **Flyway** · JWT RS256 · **PDFBox** |
 | Frontend | **Angular 17** standalone + signals · SCSS próprio · PWA com service worker escrito à mão |
 | Banco | **PostgreSQL 16** |
-| Infra | Docker Compose · **2 VMs OCI Ampere A1 (ARM64, 1 OCPU / 1 GB)** · Caddy (HTTPS) + nginx · imagens no GHCR |
-| Cloud | Oracle Cloud, região `sa-saopaulo-1` · DuckDNS · SMTP do Gmail |
+| Infra | Docker Compose · **1 VM GCP e2-micro (amd64)** · Caddy (HTTPS) + nginx · imagens no GHCR |
+| Cloud | Google Cloud `us-central1` · **Postgres no Neon** · DuckDNS · SMTP do Gmail |
 
 Ambiente do Danilo: **Node 18.13** (por isso Angular 17, não 18+), Maven 3.9,
 Java 19 rodando target 17. Shell **zsh** (os scripts usam shebang bash).
@@ -65,8 +63,7 @@ Java 19 rodando target 17. Shell **zsh** (os scripts usam shebang bash).
 ```
 jcardapp/
 ├── CLAUDE.md · README.md · .env.example
-├── docker-compose.app.yml      ← PROD jcard-app: caddy + frontend + backend
-├── docker-compose.db.yml       ← PROD jcard-db: só Postgres, bind no IP privado
+├── docker-compose.yml          ← PROD: caddy + frontend + backend (banco é o Neon)
 ├── docker-compose.dev.yml      ← só Postgres (dev)
 ├── Caddyfile                   ← HTTPS Let's Encrypt em jcardapp.duckdns.org
 ├── backend/                    ← Quarkus, pacote br.com.jcard
@@ -82,7 +79,8 @@ jcardapp/
 │   ├── Dockerfile.runtime · nginx.conf
 │   └── src/{sw.js, manifest.webmanifest, app/{core,layout,pages}}
 ├── .github/workflows/          ← ci.yml (build+testes+segurança) · cd.yml (GHCR → pull na VM)
-├── scripts/                    ← oci-a1-retry · oci-bootstrap · oci-descobrir · duckdns-update · gen-jwt-keys
+├── scripts/                    ← gcp-provisionar · gcp-bootstrap · duckdns-update · gen-jwt-keys
+│                                  verificar-custo-zero · oci-* (plano B, ver §8)
 └── docs/                       ← ARQUITETURA · REGRAS-DE-NEGOCIO · CICD · parser-itau · topologia
 ```
 
@@ -117,10 +115,13 @@ com troca de senha obrigatória.
 
 ## 6. Decisões que não são óbvias no código
 
-- **Imagens ARM sem emulação.** As VMs são Ampere A1 (aarch64) e, com 1 GB, nem
-  comportariam um build. O `cd.yml`
-  compila no runner amd64 (`mvn package`, `ng build`) e os `Dockerfile.runtime`
-  só fazem `COPY` do artefato numa base arm64. Buildar Maven sob QEMU custaria ~5x.
+- **O build não está no Dockerfile.** A e2-micro tem 1 GB e uma vCPU
+  compartilhada: um build de Maven/Node ali levaria muito tempo e provavelmente
+  estouraria a memória. O `cd.yml` compila no runner e os `Dockerfile.runtime`
+  só fazem `COPY` do artefato pronto.
+- **Pool com `min-size=0`.** O Neon hiberna após ~5 min SEM CONEXÃO. Um pool
+  segurando conexão ociosa manteria o banco acordado 24/7 (~180 CU-hours) e
+  estouraria as 100 CU-hours do plano gratuito.
 - **`EntidadeBase` com `IDENTITY` e `getId()`.** O schema é `BIGSERIAL`; o
   `PanacheEntity` padrão usa `AUTO`, que no Hibernate 6 vira sequence
   `<entidade>_seq` e quebra. E ler `entidade.associacao.id` num proxy lazy devolve
@@ -155,40 +156,25 @@ com troca de senha obrigatória.
 
 ## 8. Infraestrutura
 
-- **Rede** (criada em 07/08/2026): VCN `jcard-vcn` `10.1.0.0/16`, subnet pública
-  `jcard-subnet` `10.1.1.0/24`, IGW e security list `jcard-sl` (ingress só 22/80/443).
-  OCIDs em `scripts/.oci-launch.env` (não versionado).
-- **Duas VMs de 1 OCPU / 1 GB** (mesmo shape e topologia do `ebd-samambaia`, que
-  roda assim em produção): `jcard-app` (caddy + frontend + backend) e `jcard-db`
-  (Postgres). 1 GB não comporta banco e app juntos — daí a separação — e é o menor
-  pedido possível, o mais fácil de alocar quando a capacidade Ampere está escassa.
-  **Swap de 3 GB é obrigatório** nas duas; sem ele o primeiro pico leva OOM kill.
-- **Tetos do Always Free a respeitar**: **4 OCPU + 24 GB de A1** e **200 GB de
-  storage** na tenancy inteira (94 GB já são do EBD). Os limites que a API reporta
-  são maiores, mas isso é o teto administrativo da Oracle, não permissão de gasto —
-  o tipo da conta se confere no console (Billing → Subscriptions).
-- ⚠️ `E2.1.Micro` tem **limite 2 na tenancy e as duas são do `ebd-samambaia`** —
-  não dá para criar mais uma sem pedir aumento de limite (e pagar).
-- **Capacidade A1 é o gargalo**: `sa-saopaulo-1` responde "Out of host capacity"
-  com frequência. `scripts/oci-a1-retry.sh` insiste em segundo plano e, após 10
-  tentativas, passa a pedir 1 OCPU/6 GB. A A1.Flex é redimensionável depois
-  (parar → editar shape → ligar), então vale pegar a capacidade que aparecer.
-- **Deploy**: merge na `main` → CI → CD publica no GHCR privado e a VM só faz
-  `pull` + `up`. Rollback: `JCARD_IMAGE_TAG=<sha>` no `.env`.
-
-### O que já foi feito para caber no gratuito
-
-| Cota | Teto | Como o projeto cabe |
-|---|---|---|
-| Ampere A1 (tenancy) | 4 OCPU / 24 GB | 2 VMs de 1 OCPU / 1 GB = 2 OCPU / 2 GB (sobra muito) |
-| Block storage (tenancy) | 200 GB | 2 × 50 GB de boot; com os 94 GB do EBD → **194 GB, só 6 de folga** |
-| `E2.1.Micro` | 2 | **esgotado pelo EBD** — por isso Ampere |
-| GHCR em repo privado | 500 MB | o CD apaga versões antigas, guardando 5 (`delete-package-versions`) |
-| Actions em repo privado | 2.000 min/mês | Semgrep e Trivy só em PR e no cron semanal; o resto roda sempre |
-| Load balancer | 1 (10 Mbps) | não usamos — o Caddy na própria VM faz TLS |
-
-⚠️ **Não** usar: `eclipse-temurin:17-jre-alpine` (só existe em amd64, quebra no
-ARM), Object Storage acima de 20 GB, mais de 5 backups de boot volume.
+- **Uma VM `e2-micro` no GCP** (`us-central1`), sempre gratuita, com caddy +
+  frontend + backend. **O Postgres está fora**, no Neon — é isso que faz 1 GB
+  bastar.
+- **Neon**: plano gratuito permanente, 0,5 GB de storage e 100 CU-hours/mês.
+  Hiberna sozinho e faz backup (point-in-time), então não há cron de `pg_dump`.
+- ⚠️ **O que quebra o custo zero, em ordem de facilidade de errar**:
+  1. subir a VM fora de `us-west1`/`us-central1`/`us-east1` — mesma máquina,
+     mas **cobrada**;
+  2. reservar um **IP estático** (cobrado quando ocioso; usamos o efêmero);
+  3. um pool segurando conexão e impedindo o Neon de hibernar;
+  4. disco acima de 30 GB.
+  `bash scripts/verificar-custo-zero.sh` barra os quatro.
+- **Plano B (Oracle)**: os scripts `scripts/oci-*` continuam válidos. A Oracle
+  tem oferta melhor (4 OCPU / 24 GB de Ampere A1), mas respondeu
+  `Out of host capacity` em **todas** as tentativas ao longo de dois dias em
+  `sa-saopaulo-1`, inclusive no menor shape. Always Free só existe na *home
+  region*, então mudar de região sairia do gratuito.
+- **Deploy**: merge na `main` → CI → CD publica no GHCR e a VM só faz `pull` +
+  `up`. Rollback: `JCARD_IMAGE_TAG=<sha>` no `.env`.
 
 ## 9. Estado do projeto
 
@@ -196,12 +182,12 @@ ARM), Object Storage acima de 20 GB, mais de 5 backups de boot volume.
 - ✅ Frontend Angular 17 + PWA compilando (84 kB no bundle inicial).
 - ✅ CI/CD escritos; o CD roda em **modo mock** enquanto os secrets `OCI_*`
   estiverem vazios — a esteira fica verde antes de as VMs existirem.
-- ✅ Rede OCI provisionada (5432 restrita à subnet; aperte no /32 com
-  `scripts/oci-restringir-db.sh` depois que as VMs subirem).
-- ⏳ **VMs A1 aguardando capacidade** na Oracle (retry rodando).
+- ⏳ **VM ainda não provisionada.** Migramos de Oracle para GCP + Neon depois de
+  2 dias sem capacidade Ampere. Falta criar as contas (GCP e Neon) e rodar
+  `scripts/gcp-provisionar.sh`.
 - ⏳ **Parser do Itaú precisa ser calibrado com um PDF real.** A estrutura e os
   testes estão prontos contra um fixture anonimizado; as regexes foram escritas
   a partir do layout típico do Itaú e podem precisar de ajuste. Guia:
   `docs/parser-itau.md`.
-- ⏳ Pendências do Danilo: token do DuckDNS, senha de app do Gmail, PAT com
-  `read:packages`.
+- ⏳ Pendências do Danilo: contas GCP e Neon, token do DuckDNS, senha de app do
+  Gmail, PAT com `read:packages`.

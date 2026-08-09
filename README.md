@@ -71,7 +71,7 @@ gratuitas do GitHub. `scripts/verificar-custo-zero.sh` confere se continua assim
 ## Stack
 
 Quarkus 3.15 (Java 17) · Angular 17 (PWA) · PostgreSQL 16 · Docker · Caddy + nginx
-· 2 VMs Oracle Cloud Ampere A1 (Always Free) · imagens no GHCR.
+· 1 VM Google Cloud e2-micro (Always Free) · Postgres no Neon · imagens no GHCR.
 
 Documentação em [`docs/`](docs/) e contexto de desenvolvimento em
 [`CLAUDE.md`](CLAUDE.md).

@@ -1,90 +1,96 @@
 #!/usr/bin/env bash
 # ============================================================
-# Confere se a infraestrutura do JcardApp continua 100% dentro do Always Free.
+# Confere se a infraestrutura do JcardApp continua 100% gratuita.
 #
 #   bash scripts/verificar-custo-zero.sh
 #
-# POR QUE ISTO EXISTE: se a conta tiver upgrade, a Oracle NÃO bloqueia quando
-# você passa do gratuito — ela deixa criar e cobra. Sem uma checagem explícita,
-# um shape um pouco maior ou um volume esquecido viram fatura no fim do mês sem
-# nenhum aviso. (Os limites que a API reporta são o teto administrativo, não
-# prova de que a conta é cobrável — isso se vê no console.)
+# POR QUE ISTO EXISTE: nenhum provedor bloqueia quando você passa do gratuito —
+# eles deixam criar e cobram. No GCP o risco é concreto e silencioso: a mesma
+# e2-micro é grátis em us-central1 e COBRADA em qualquer outra região, e um IP
+# estático reservado passa a custar assim que fica ocioso.
 #
-# Sai com código 1 se algo estourou o teto.
+# Sai com código 1 se achou algo fora do gratuito.
 # ============================================================
 set -uo pipefail
-export SUPPRESS_LABEL_WARNING=True
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "$DIR/.oci-launch.env" ]]; then
-  # shellcheck source=/dev/null
-  source "$DIR/.oci-launch.env"
-fi
-T="${COMPARTMENT_ID:?defina COMPARTMENT_ID em scripts/.oci-launch.env}"
-AD="${AD:-xiXO:SA-SAOPAULO-1-AD-1}"
-
+PROJETO="${GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 falhas=0
+ok()    { printf '  %-38s %s\n' "$1" "✅ $2"; }
+falha() { printf '  %-38s %s\n' "$1" "❌ $2"; falhas=$((falhas + 1)); }
 
-linha() { printf '  %-34s %-18s %s\n' "$1" "$2" "$3"; }
-avalia() { # $1=rótulo $2=usado $3=teto $4=unidade
-  local usado="${2:-0}" teto="$3"
-  if awk "BEGIN{exit !($usado > $teto)}"; then
-    linha "$1" "$usado / $teto $4" "❌ PASSOU DO GRATUITO"
-    falhas=$((falhas + 1))
+echo
+echo "Google Cloud — Always Free"
+echo "──────────────────────────────────────────────────────────────────────"
+
+if ! command -v gcloud >/dev/null 2>&1; then
+  echo "  gcloud não instalado — pulei a verificação do GCP."
+  echo "  Instale com: brew install --cask google-cloud-sdk"
+else
+  # --- instâncias: shape e região decidem se é grátis --------------------
+  gcloud compute instances list --project "$PROJETO" \
+    --format='value(name,zone,machineType,status)' 2>/dev/null \
+  | while read -r nome zona tipo estado; do
+      [[ -z "$nome" ]] && continue
+      regiao="${zona%-*}"
+      if [[ "$tipo" != "e2-micro" ]]; then
+        falha "$nome ($tipo)" "só e2-micro é gratuita"
+      elif [[ "$regiao" != "us-west1" && "$regiao" != "us-central1" && "$regiao" != "us-east1" ]]; then
+        falha "$nome em $regiao" "e2-micro só é grátis em us-west1/central1/east1"
+      else
+        ok "$nome · e2-micro · $regiao" "$estado"
+      fi
+    done
+
+  QTD=$(gcloud compute instances list --project "$PROJETO" --format='value(name)' 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "${QTD:-0}" -gt 1 ]]; then
+    falha "Instâncias e2-micro" "$QTD encontradas — o gratuito cobre 1"
   else
-    linha "$1" "$usado / $teto $4" "✅"
+    ok "Quantidade de instâncias" "${QTD:-0} / 1"
   fi
-}
+
+  # --- disco: 30 GB de pd-standard ---------------------------------------
+  DISCO=$(gcloud compute disks list --project "$PROJETO" \
+    --format='value(sizeGb)' 2>/dev/null | awk '{s+=$1} END{print s+0}')
+  if [[ "${DISCO:-0}" -gt 30 ]]; then
+    falha "Disco persistente" "${DISCO} GB / 30 GB"
+  else
+    ok "Disco persistente" "${DISCO:-0} GB / 30 GB"
+  fi
+
+  # --- IP estático ocioso é cobrado; o efêmero da VM não ------------------
+  IPS=$(gcloud compute addresses list --project "$PROJETO" --format='value(name)' 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "${IPS:-0}" -gt 0 ]]; then
+    falha "IPs estáticos reservados" "$IPS — são cobrados; use o efêmero da VM"
+  else
+    ok "IPs estáticos reservados" "0 (a VM usa IP efêmero)"
+  fi
+
+  # --- serviços que cobram e não deveriam existir aqui --------------------
+  for svc in "sql instances:Cloud SQL" "forwarding-rules:Load balancer"; do
+    cmd="${svc%%:*}"; rotulo="${svc##*:}"
+    n=$(gcloud ${cmd/sql instances/sql instances} list --project "$PROJETO" --format='value(name)' 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "${n:-0}" -gt 0 ]]; then falha "$rotulo" "$n encontrado(s) — cobram"; else ok "$rotulo" "0"; fi
+  done
+fi
 
 echo
-echo "Always Free — tenancy inteira (inclui o projeto ebd-samambaia)"
-echo "───────────────────────────────────────────────────────────────────────"
-
-# --- Compute Ampere A1 -------------------------------------------------------
-A1_CPU=$(oci limits resource-availability get --compartment-id "$T" --service-name compute \
-  --limit-name standard-a1-core-count --availability-domain "$AD" \
-  --query 'data.used' --raw-output 2>/dev/null || echo 0)
-A1_MEM=$(oci limits resource-availability get --compartment-id "$T" --service-name compute \
-  --limit-name standard-a1-memory-count --availability-domain "$AD" \
-  --query 'data.used' --raw-output 2>/dev/null || echo 0)
-avalia "Ampere A1 · OCPU"     "$A1_CPU" 4   "OCPU"
-avalia "Ampere A1 · memória"  "$A1_MEM" 24  "GB"
-
-# --- Micro AMD ---------------------------------------------------------------
-MICRO=$(oci limits resource-availability get --compartment-id "$T" --service-name compute \
-  --limit-name vm-standard-e2-1-micro-count --availability-domain "$AD" \
-  --query 'data.used' --raw-output 2>/dev/null || echo 0)
-avalia "VM.Standard.E2.1.Micro" "$MICRO" 2 "instâncias"
-
-# --- Block storage (boot + block) -------------------------------------------
-BOOT=$(oci bv boot-volume list -c "$T" --availability-domain "$AD" \
-  --query 'sum(data[].{s:"size-in-gbs"}[].s)' --raw-output 2>/dev/null || echo 0)
-BLOCK=$(oci bv volume list -c "$T" --availability-domain "$AD" \
-  --query 'sum(data[].{s:"size-in-gbs"}[].s)' --raw-output 2>/dev/null || echo 0)
-TOTAL_ST=$(awk "BEGIN{print ${BOOT:-0} + ${BLOCK:-0}}")
-avalia "Block storage (boot+block)" "$TOTAL_ST" 200 "GB"
-
-# --- Coisas que cobram e não deviam existir ---------------------------------
-echo
-echo "Recursos que geram cobrança — devem estar zerados"
-echo "───────────────────────────────────────────────────────────────────────"
-
-LB=$(oci lb load-balancer list -c "$T" --query 'length(data)' --raw-output 2>/dev/null || echo 0)
-avalia "Load balancers"           "${LB:-0}" 1 "(1 é grátis, 10 Mbps)"
-
-# Backups de volume contam separado do storage e passam despercebidos.
-BKP=$(oci bv boot-volume-backup list -c "$T" --query 'length(data)' --raw-output 2>/dev/null || echo 0)
-avalia "Backups de boot volume"   "${BKP:-0}" 5 "(5 grátis)"
+echo "Neon (Postgres) — plano gratuito"
+echo "──────────────────────────────────────────────────────────────────────"
+echo "  Confira em console.neon.tech → Usage:"
+printf '  %-38s %s\n' "Storage" "0,5 GB por projeto"
+printf '  %-38s %s\n' "Compute" "100 CU-hours/mês"
+echo "  O pool do app é min-size=0 para o banco hibernar (~5 min ocioso)."
+echo "  Se o consumo de CU passar de ~50/mês, algo está segurando conexão."
 
 echo
-echo "GitHub (plano Free) — verificar em github.com/settings/billing"
-echo "───────────────────────────────────────────────────────────────────────"
-linha "Actions em repo privado" "2.000 min/mês" "CI ~6 min + CD ~3 min por push"
-linha "GHCR em repo privado"    "500 MB"        "o CD apaga versões antigas"
+echo "GitHub (plano Free)"
+echo "──────────────────────────────────────────────────────────────────────"
+printf '  %-38s %s\n' "Actions (repo privado)" "2.000 min/mês · ilimitado se público"
+printf '  %-38s %s\n' "GHCR (repo privado)" "500 MB · o CD apaga versões antigas"
 
 echo
 if [[ "$falhas" -gt 0 ]]; then
-  echo "❌ $falhas item(ns) fora do Always Free — isso está gerando cobrança."
+  echo "❌ $falhas item(ns) fora do gratuito — isso está gerando cobrança."
   exit 1
 fi
-echo "✅ Tudo dentro do Always Free. Custo: US\$ 0."
+echo "✅ Nada fora do gratuito. Custo: US\$ 0."

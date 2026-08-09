@@ -35,7 +35,9 @@ source "$ENV_FILE"
 : "${COMPARTMENT_ID:?}" ; : "${SUBNET_ID:?}" ; : "${IMAGE_ID:?}" ; : "${AD:?}"
 VMS=(${VMS:-jcard-app jcard-db})
 SSH_KEY="${SSH_KEY_FILE:-$HOME/.ssh/jcard_deploy.pub}"
-INTERVALO="${SLEEP_SECONDS:-60}"
+# A própria chamada demora ~90s para a Oracle responder "sem capacidade", então
+# o intervalo entre rodadas pode ser curto sem risco de rate limit.
+INTERVALO="${SLEEP_SECONDS:-20}"
 
 # 1 OCPU / 1 GB por VM — o mínimo que a A1.Flex aceita, e o mesmo tamanho das
 # VMs do EBD. Usa 2 OCPU / 2 GB dos 4 OCPU / 24 GB do Always Free, então sobra
@@ -46,6 +48,9 @@ INTERVALO="${SLEEP_SECONDS:-60}"
 # editar o shape, ligar de novo.
 OCPUS="${OCPUS:-1}" ; MEM="${MEM_GB:-1}"
 tentativa=0
+
+ERRO="$(mktemp)"
+trap 'rm -f "$ERRO"' EXIT
 
 existe() {
   oci compute instance list -c "$COMPARTMENT_ID" --display-name "$1" \
@@ -63,6 +68,8 @@ while true; do
     faltam=1
     printf '[%s] #%s %s ... ' "$(date '+%F %T')" "$tentativa" "$nome"
 
+    # O stderr é PRESERVADO: descartá-lo já custou horas de diagnóstico às cegas.
+    # "Out of host capacity" é esperado; qualquer outro código precisa aparecer.
     if id=$(oci compute instance launch \
         --compartment-id "$COMPARTMENT_ID" --availability-domain "$AD" \
         --shape VM.Standard.A1.Flex \
@@ -70,10 +77,25 @@ while true; do
         --image-id "$IMAGE_ID" --subnet-id "$SUBNET_ID" \
         --boot-volume-size-in-gbs 50 --assign-public-ip true \
         --display-name "$nome" --ssh-authorized-keys-file "$SSH_KEY" \
-        --query 'data.id' --raw-output 2>/dev/null); then
+        --query 'data.id' --raw-output 2>"$ERRO"); then
       echo "✅ criada: $id"
     else
-      echo "sem capacidade"
+      motivo="$(grep -oE '"message": "[^"]*"' "$ERRO" | head -1 | cut -d'"' -f4)"
+      echo "${motivo:-erro desconhecido}"
+      # Três categorias:
+      #   - falta de capacidade  -> é o motivo de o script existir, rotina;
+      #   - rede/timeout/5xx     -> transitório (tipicamente o Mac dormindo e
+      #                             derrubando a conexão), tentar de novo resolve;
+      #   - qualquer outra coisa -> configuração, permissão ou cota: repetir não
+      #                             vai consertar, então precisa aparecer.
+      case "$motivo" in
+        *"Out of host capacity"*) ;;
+        *"timed out"*|*"timeout"*|*"Connection"*|*"connection"*|*"ServiceUnavailable"*|*"TooManyRequests"*) ;;
+        *)
+          echo "  ⚠️  ERRO NÃO ESPERADO — detalhe completo:"
+          sed 's/^/     /' "$ERRO" | head -12
+          ;;
+      esac
     fi
     sleep 5
   done
