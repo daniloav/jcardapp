@@ -65,8 +65,9 @@ conflito e o parser do Itaú contra um fixture anonimizado.
 
 ## Custo
 
-US$ 0. Roda inteiro no Always Free da Oracle Cloud, com o CI/CD dentro das cotas
-gratuitas do GitHub. `scripts/verificar-custo-zero.sh` confere se continua assim.
+US$ 0. Uma VM sempre-gratuita no Google Cloud (`e2-micro`) e o Postgres no Neon,
+ambos em planos gratuitos permanentes — não são trials de 12 meses.
+`scripts/verificar-custo-zero.sh` confere se continua assim.
 
 ## Stack
 

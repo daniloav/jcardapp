@@ -31,7 +31,7 @@ Oracle, cujas VMs eram ARM.
 job build (ubuntu-latest, amd64):
   mvn package          → backend/target/quarkus-app/     (nativo, rápido)
   ng build             → frontend/dist/                  (nativo, rápido)
-  buildx --platform linux/arm64 com Dockerfile.runtime   (só COPY)
+  buildx --platform linux/amd64 com Dockerfile.runtime   (só COPY)
   push  ghcr.io/daniloav/jcard-{backend,frontend}:{latest,<sha>}
 ```
 
