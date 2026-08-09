@@ -57,6 +57,26 @@ class ItauFaturaParserTest {
                 "nenhuma linha com cara de lançamento deveria sobrar: " + f.linhasIgnoradas());
     }
 
+    /**
+     * Regressão de uma fatura real: o texto citava "Total desta fatura",
+     * "Total da fatura ANTERIOR" e vários "Total a pagar" de simulações de
+     * financiamento — 7 casamentos. O parser pegava o último e teria usado
+     * R$ 37.608,36 no lugar de R$ 34.455,72.
+     */
+    @Test
+    @DisplayName("não confunde o total da fatura com o anterior nem com simulações")
+    void totalNaoConfundeComOutros() {
+        String ruido = """
+                Total da fatura anterior 30.368,27
+                Emissao: 07/07/2026 = Total desta fatura 638,96
+                Total a pagar R$ 38.907,01 - Total a pagar R$ 45.271,82
+                Valor total financiado R$ 29.271,62
+                """ + texto;
+        FaturaLida f = parser.ler(ruido, COMPETENCIA);
+        assertEquals(new BigDecimal("638.96"), f.valorTotal(),
+                "tem de vir de 'Total desta fatura', não do maior nem do último");
+    }
+
     @Test
     @DisplayName("total e vencimento saem do cabeçalho")
     void cabecalho() {

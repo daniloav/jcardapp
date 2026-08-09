@@ -38,6 +38,79 @@ jcard.parser.itau.total=(?i)total\\s+(?:desta\\s+fatura|da\\s+fatura|a\\s+pagar)
 jcard.parser.itau.vencimento=(?i)vencimento\\D{0,20}?(\\d{2}/\\d{2}/\\d{4})
 ```
 
+## O que uma fatura real revelou (07/2026)
+
+Calibrar contra uma fatura de verdade mostrou que o layout é **muito** mais
+complexo que o modelo típico. Registro aqui para a próxima sessão não redescobrir.
+
+### 1. Duas colunas, não uma
+
+As transações vêm lado a lado. O `PDFTextStripper`, com ou sem `sortByPosition`,
+funde as duas numa linha só — **98% das linhas continham 2 transações**, muitas
+vezes de cartões diferentes, o que faria o rateio atribuir a pessoa errada.
+
+Medindo o X de cada data `dd/MM`, as colunas começam em **x≈140** e **x≈360**
+(página de 595 pt), com a parcela em x≈220 e x≈440. Extraindo por região com
+divisa em **x=350**, saem 579 linhas com uma transação cada.
+
+Cortar em metades (297) ou terços não funciona: trunca as descrições.
+
+### 2. O total aparece 7 vezes
+
+O texto cita "Total desta fatura", "Total da fatura **anterior**", vários
+"Total a pagar" de simulações de financiamento e "Valor total financiado".
+A regex antiga pegava o **último** e usaria R$ 37.608,36 no lugar de
+R$ 34.455,72. Corrigido: âncora estrita em `Total desta fatura`, primeiro
+casamento. Coberto por `ItauFaturaParserTest.totalNaoConfundeComOutros`.
+
+### 3. A fatura declara subtotais por cartão
+
+`Lançamentos no cartão (final NNNN)  15.876,08` — um por cartão. **É a melhor
+ferramenta de validação que existe**: dá para conferir a leitura contra o número
+do próprio banco, cartão a cartão, em vez de só olhar o total.
+
+### 4. Seções de cartão têm abertura e fechamento
+
+`NOME (final NNNN)` abre; `Lançamentos no cartão (final NNNN) VALOR` fecha.
+Só conta o que está entre os dois.
+
+**Cuidado**: depois do último fechamento vem "Compras parceladas - próximas
+faturas", que **reabre** os mesmos cartões listando parcelas de meses futuros
+(R$ 19.752,17 nesta fatura). Regra que funciona: cartão já fechado não reabre —
+se reabrir, acabou a parte atual.
+
+### 5. A parcela é coluna própria e opcional
+
+Formato: `DD/MM  DESCRIÇÃO  [PARCELA]  VALOR`, onde PARCELA é `03/10`, `-` ou
+**vazio**. E ela pode vir colada na descrição (`ODONTOCO10/12`), porque a coluna
+tem largura fixa e trunca.
+
+### 6. Um cartão usava layout diferente
+
+O `final 0020` vinha com cabeçalho próprio (`DATA ESTABELECIMENTO VALOR EM R$`)
+e **duas linhas por transação** — estabelecimento numa, `CATEGORIA .CIDADE` na
+outra. Precisa de tratamento à parte.
+
+### Estado da calibração
+
+Com extração por coluna + seções delimitadas + parcela opcional:
+
+| cartão | extraído | declarado | |
+|---|---|---|---|
+| 1064 | 21,86 | 21,86 | ✅ |
+| 5037 | 900,00 | 900,00 | ✅ |
+| 7266 | 1.808,41 | 1.808,09 | R$ 0,32 |
+| 8348 | 15.992,52 | 15.876,08 | R$ 116,44 |
+| 0020 | 19.575,64 | 15.747,96 | layout diferente |
+
+**Enquanto não fechar exato, a fatura trava em `DIVERGENTE` e ninguém é cobrado
+errado** — o sistema falha do lado seguro, por construção.
+
+> **Vale considerar CSV/OFX.** O PDF é formato de *apresentação*, com pelo menos
+> três layouts diferentes na mesma fatura. O Itaú permite baixar a fatura em
+> CSV/OFX pelo app, que é formato de *dado* — parsing confiável, sem geometria.
+> Para a invariante "as contas sempre batem", é um caminho bem mais sólido.
+
 ## Roteiro de calibração
 
 1. **Veja o que o PDFBox realmente extraiu.** É o passo que evita adivinhação:
