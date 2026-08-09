@@ -168,12 +168,27 @@ jobs:
             docker-compose.yml Caddyfile "$SSH_USER@$SSH_HOST:~/$APP_DIR/"
           rsync -az -e "ssh -i ~/.ssh/id_deploy" scripts/ "$SSH_USER@$SSH_HOST:~/$APP_DIR/scripts/"
 
+      # As chaves têm de pertencer ao UID 1001 (appuser da imagem), não ao
+      # usuário do SSH. Com o dono errado o diretório 700 fica ilegível para o
+      # container e o Quarkus falha com SRJWT02002 ao ler a chave pública —
+      # o app sobe, mas todo endpoint devolve 500.
+      #
+      # Dar posse ao 1001 é mais seguro que afrouxar para 755: assim só o
+      # processo da aplicação lê a chave privada, nem o usuário do SSH.
       - name: Gravar as chaves JWT no volume ./keys
         if: steps.cfg.outputs.ready == 'true' && env.JWT_PRIV != '' && env.JWT_PUB != ''
         run: |
-          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" "mkdir -p ~/$APP_DIR/keys && chmod 700 ~/$APP_DIR/keys"
-          printf '%s' "$JWT_PRIV" | ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" "cat > ~/$APP_DIR/keys/privateKey.pem && chmod 600 ~/$APP_DIR/keys/privateKey.pem"
+          # Retoma a posse para conseguir sobrescrever num redeploy.
+          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            "mkdir -p ~/$APP_DIR/keys && sudo chown -R \$USER:\$USER ~/$APP_DIR/keys"
+          printf '%s' "$JWT_PRIV" | ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" "cat > ~/$APP_DIR/keys/privateKey.pem"
           printf '%s' "$JWT_PUB"  | ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" "cat > ~/$APP_DIR/keys/publicKey.pem"
+          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" "
+            sudo chown -R 1001:1001 ~/$APP_DIR/keys &&
+            sudo chmod 700 ~/$APP_DIR/keys &&
+            sudo chmod 600 ~/$APP_DIR/keys/privateKey.pem &&
+            sudo chmod 644 ~/$APP_DIR/keys/publicKey.pem
+          "
 
       # Só faz login quando as imagens são privadas. Com os pacotes públicos no
       # GHCR o `pull` é anônimo, e aí o PAT deixa de ser necessário — um secret
