@@ -5,9 +5,17 @@
 # ponta: sem QEMU, sem cross-compile. Ver .github/workflows/cd.yml.
 #
 # Espera que `mvn package` já tenha rodado (target/quarkus-app existe).
+#
 # Alpine corta ~100 MB da imagem. Só é possível em amd64 — a tag 17-jre-alpine
 # não existe para arm64, o que impedia usá-la quando o alvo era a Ampere A1.
 FROM eclipse-temurin:17-jre-alpine
+
+# O PDFBox extrai texto sem rasterizar, então em tese não precisa de fontes.
+# Mas quando o PDF não traz a fonte embutida ele procura uma substituta no
+# sistema, e o Alpine vem sem nenhuma. Os testes rodam no runner (Ubuntu, com
+# fontes), nunca dentro desta imagem — ou seja, uma falha aqui só apareceria na
+# primeira fatura de verdade. ~15 MB é barato demais para correr esse risco.
+RUN apk add --no-cache fontconfig ttf-dejavu
 
 WORKDIR /app
 
@@ -31,4 +39,8 @@ EXPOSE 8080
 #
 # SerialGC, e não G1: a e2-micro tem 1 vCPU (compartilhada), então um coletor
 # paralelo só disputa CPU com a própria aplicação e ainda reserva mais memória.
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=60.0", "-XX:+UseSerialGC", "-jar", "quarkus-run.jar"]
+#
+# headless=true: sem isso o PDFBox pode tentar inicializar o subsistema gráfico
+# num container que não tem display, e falhar na leitura da fatura.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=60.0", "-XX:+UseSerialGC", \
+            "-Djava.awt.headless=true", "-jar", "quarkus-run.jar"]
