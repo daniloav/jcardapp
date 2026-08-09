@@ -19,30 +19,27 @@ services:
       # Chaves JWT gravadas pelo CD a partir dos secrets: a imagem fica sem
       # segredo e os tokens sobrevivem ao deploy.
       - ./keys:/keys:ro
+    # Passa adiante SÓ o que existir no .env — é o ponto central desta escolha.
+    #
+    # Com `environment: VAR: ${VAR:-}`, uma variável ausente vira **string
+    # vazia**, e o SmallRye Config trata vazio como "não encontrado": a
+    # propriedade obrigatória some e o app entra em ciclo de reinício. Foi o que
+    # aconteceu com as regexes do parser no primeiro deploy.
+    #
+    # `env_file` não tem esse efeito: o que não está no arquivo simplesmente não
+    # é definido, e o application.properties mantém o valor padrão. Por isso as
+    # regexes do parser (JCARD_PARSER_ITAU_*) ficam comentadas no .env.example —
+    # descomente só para calibrar um layout novo.
+    env_file: .env
     environment:
+      # Estes não vêm do .env: são fixos da topologia ou precisam de tradução
+      # para o nome que o Quarkus espera. O que está aqui vence o env_file.
       JCARD_JWT_PUBLIC_LOCATION: /keys/publicKey.pem
       JCARD_JWT_PRIVATE_LOCATION: /keys/privateKey.pem
       # Neon exige TLS. A string vem do painel do Neon (ver .env.example).
       QUARKUS_DATASOURCE_JDBC_URL: ${JCARD_DB_URL:?defina JCARD_DB_URL no .env}
       QUARKUS_DATASOURCE_USERNAME: ${JCARD_DB_USER:?defina JCARD_DB_USER no .env}
       QUARKUS_DATASOURCE_PASSWORD: ${JCARD_DB_PASS:?defina JCARD_DB_PASS no .env}
-      JCARD_ADMIN_NOME: ${JCARD_ADMIN_NOME:-Titular do cartao}
-      JCARD_ADMIN_LOGIN: ${JCARD_ADMIN_LOGIN:-admin}
-      JCARD_ADMIN_EMAIL: ${JCARD_ADMIN_EMAIL:-admin@jcardapp.local}
-      JCARD_ADMIN_SENHA: ${JCARD_ADMIN_SENHA:?defina JCARD_ADMIN_SENHA no .env}
-      JCARD_SENHA_PADRAO: ${JCARD_SENHA_PADRAO:-12345678}
-      JCARD_APP_URL: ${JCARD_APP_URL:-https://jcardapp.duckdns.org}
-      JCARD_NOTIF_ENABLED: ${JCARD_NOTIF_ENABLED:-false}
-      JCARD_MAIL_FROM: ${JCARD_MAIL_FROM:-}
-      JCARD_SMTP_HOST: ${JCARD_SMTP_HOST:-smtp.gmail.com}
-      JCARD_SMTP_PORT: ${JCARD_SMTP_PORT:-587}
-      JCARD_SMTP_USER: ${JCARD_SMTP_USER:-}
-      JCARD_SMTP_PASS: ${JCARD_SMTP_PASS:-}
-      # Regexes do parser: calibrar layout novo do Itaú mexendo só no .env.
-      JCARD_PARSER_ITAU_PORTADOR: ${JCARD_PARSER_ITAU_PORTADOR:-}
-      JCARD_PARSER_ITAU_LANCAMENTO: ${JCARD_PARSER_ITAU_LANCAMENTO:-}
-      JCARD_PARSER_ITAU_TOTAL: ${JCARD_PARSER_ITAU_TOTAL:-}
-      JCARD_PARSER_ITAU_VENCIMENTO: ${JCARD_PARSER_ITAU_VENCIMENTO:-}
     networks: [jcard-net]
 
   frontend:

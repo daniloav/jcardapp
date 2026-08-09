@@ -50,6 +50,25 @@ jobs:
         # do Itaú contra o fixture anonimizado.
         run: mvn -B -ntp verify
 
+  # Trava para um erro que já derrubou o app em produção: `VAR: ${VAR:-}` no
+  # compose faz uma variável ausente virar string VAZIA, e o SmallRye Config
+  # trata vazio como "não encontrado" — a propriedade obrigatória some e o
+  # backend entra em ciclo de reinício. Use `env_file` para passar só o que existe.
+  compose:
+    name: Compose · sem env vazio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Procurar o padrão ${VAR:-} em docker-compose.yml
+        run: |
+          # Ignora comentários — o próprio arquivo documenta o padrão proibido.
+          if grep -nE '^[^#]*\$\{[A-Z_]+:-\}' docker-compose.yml; then
+            echo "::error title=Compose::As linhas acima injetam variável VAZIA no container."
+            echo "Use 'env_file:' para repassar só o que estiver definido no .env."
+            exit 1
+          fi
+          echo "✅ Nenhuma variável seria injetada vazia."
+
   frontend:
     name: Frontend · build
     runs-on: ubuntu-latest
