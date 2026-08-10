@@ -208,9 +208,10 @@ import {
 
       <h2>Todos os lançamentos ({{ d.lancamentos.length }})</h2>
       <p class="sub">
-        Com a fatura em avaliação dá para dizer de quem é um lançamento que ninguém
-        assumiu. A pessoa recebe e-mail e pode devolver ao pool com "não foi minha"
-        enquanto a fatura estiver aberta — atribuir sem aviso seria cobrança silenciosa.
+        Em azul, o que já tem dono — alguém assumiu ou você atribuiu. O lápis troca
+        o dono; nos que estão sem, ele diz de quem é. A pessoa recebe e-mail e pode
+        devolver ao pool com "não foi minha" enquanto a fatura estiver aberta —
+        atribuir sem aviso seria cobrança silenciosa.
       </p>
       <label class="campo-busca" for="filtro-lancamentos">
         Procurar
@@ -226,7 +227,7 @@ import {
           </thead>
           <tbody>
             @for (l of lancamentosFiltrados(); track l.id) {
-              <tr>
+              <tr [class.com-dono]="temDono(l)">
                 <td>{{ l.dataCompra | date: 'dd/MM' }}</td>
                 <td>
                   {{ nome(l) }}
@@ -260,7 +261,23 @@ import {
                       <span class="tag">ninguém assumiu</span>
                     }
 
-                    @if (podeAtribuir(l)) {
+                    <!-- O seletor fica atrás do lápis: com 514 linhas, um <select>
+                         por linha vira uma parede de caixas e some com a leitura
+                         de quem já tem dono. -->
+                    @if (podeAtribuir(l) && editando() !== l.id) {
+                      <button type="button" class="btn-lapis" (click)="editar(l)"
+                              [title]="l.responsavelNome ? 'Trocar o dono' : 'Dizer de quem é'"
+                              [attr.aria-label]="(l.responsavelNome ? 'Trocar o dono de ' : 'Dizer de quem é ') + nome(l)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round" aria-hidden="true">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                      </button>
+                    }
+
+                    @if (podeAtribuir(l) && editando() === l.id) {
                       <div class="atribuir">
                         <select [ngModel]="escolha[l.id] ?? null"
                                 (ngModelChange)="escolha[l.id] = $event"
@@ -276,6 +293,9 @@ import {
                         <button type="button" class="btn-secundario"
                                 [disabled]="!escolha[l.id]" (click)="atribuir(l)">
                           Atribuir
+                        </button>
+                        <button type="button" class="btn-texto" (click)="cancelarEdicao()">
+                          Cancelar
                         </button>
                       </div>
                     }
@@ -303,6 +323,8 @@ export class AdminFaturaComponent {
   excluindo = signal(false);
   reabrindo = signal(false);
   filtro = signal('');
+  /** O lançamento com o seletor de dono aberto — um de cada vez. */
+  editando = signal<number | null>(null);
   escolha: Record<number, number | null> = {};
   motivo = '';
 
@@ -343,6 +365,33 @@ export class AdminFaturaComponent {
    */
   podeAtribuir(l: Lancamento): boolean {
     return this.detalhe()?.fatura.status === 'EM_AVALIACAO' && !this.rateado(l);
+  }
+
+  /**
+   * Lançamento que já tem dono de verdade — alguém assumiu, o admin atribuiu, a
+   * parcela herdou ou a conta foi rachada. Fica de fora a `SOBRA_CONCILIACAO`:
+   * ela está no titular justamente porque ninguém assumiu, e pintá-la igual diria
+   * o contrário. Encargo também não entra, que é de todo mundo que usou o cartão.
+   */
+  temDono(l: Lancamento): boolean {
+    if (this.rateado(l)) {
+      return false;
+    }
+    return l.divisao.length > 0
+      || (l.responsavelId !== null && l.origemAtribuicao !== 'SOBRA_CONCILIACAO');
+  }
+
+  editar(l: Lancamento): void {
+    this.escolha[l.id] = null;
+    this.editando.set(l.id);
+  }
+
+  cancelarEdicao(): void {
+    const aberto = this.editando();
+    if (aberto !== null) {
+      this.escolha[aberto] = null;
+    }
+    this.editando.set(null);
   }
 
   rotuloAcerto(s: string): string {
@@ -414,6 +463,7 @@ export class AdminFaturaComponent {
     this.api.arbitrar(l.id, dono).subscribe({
       next: () => {
         this.escolha[l.id] = null;
+        this.editando.set(null);
         this.toast.ok(`Lançamento atribuído a ${nome} — avisamos por e-mail.`);
         this.carregar();
       },
