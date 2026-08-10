@@ -121,7 +121,7 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 107 testes, incluindo as duas
+- **Backend**: `cd backend && mvn -B verify` — 108 testes, incluindo as duas
   invariantes de conciliação, a atribuição em massa, a divisão de contas, o
   rateio de encargos, o ciclo
   de pagamento com comprovante, a herança de parcela, a reabertura da avaliação,
@@ -210,6 +210,13 @@ com troca de senha obrigatória.
   a latência do Neon sem mudar o resultado. Encargo que cair na busca é pulado
   em silêncio em vez de derrubar o lote, e os ids vão da tela para o backend:
   refazer o filtro no servidor faria o lote pegar linha que o admin não viu.
+- **O divisor do encargo muda na conciliação — de propósito.** Quem não assumiu
+  nada não usou o cartão, então antes de conciliar o encargo é dividido só entre
+  quem assumiu. A conciliação dá as sobras ao titular, ele passa a ter lançamento
+  e passa a dividir o encargo: um IOF 50/50 vira 1/3 para cada um dos três. O
+  total que a pessoa vê antes pode cair depois, e é isso que o aviso da tela dela
+  ("enquanto houver lançamento sem dono") anuncia. Contar o titular como
+  participante desde já foi considerado e recusado: ele ainda não usou o cartão.
 - **A conferência da conta sai do mesmo rateio, não de um segundo cálculo.** A
   tela do admin que abre a conta de uma pessoa linha a linha (`GET
   /api/faturas/{id}/utilizadores/{usuarioId}/detalhe`) chama o `RateioService`
@@ -257,7 +264,7 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 107 testes verdes (`mvn verify`).
+- ✅ Backend completo, 108 testes verdes (`mvn verify`).
 - ✅ Frontend Angular 17 + PWA compilando (87 kB no bundle inicial).
 - ✅ **Tela inicial (`/inicio`)** — é onde o login cai: gráfico das faturas por mês
    (fechada, em andamento, divergente), os dois totais e "precisa de você", que

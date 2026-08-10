@@ -57,9 +57,24 @@ Por isso o encargo **continua sem responsável** depois da conciliação: dar do
 ele desligaria o rateio. `PAGAMENTO` (quitação da fatura anterior) fica de fora —
 é ato do titular, não gasto de ninguém.
 
+**O divisor muda na conciliação quando sobra lançamento sem dono, e isso é de
+propósito.** Antes de conciliar, quem não assumiu nada não usou o cartão, e o
+encargo é dividido só entre quem assumiu. A conciliação dá as sobras ao titular;
+ele passa a ter lançamento na fatura e, com isso, passa a dividir o encargo
+também. Um IOF que estava 50/50 entre duas pessoas vira 1/3 para cada uma das
+três. Não é o rateio deixando de recalcular: é o conjunto de participantes
+mudando porque a sobra encontrou dono.
+
+Consequência assumida: o total que a pessoa vê **antes** da conciliação pode
+cair depois dela. É por isso que a tela do utilizador avisa, enquanto a fatura
+está em avaliação, que o valor ainda muda "enquanto houver lançamento sem dono".
+A alternativa — contar o titular como participante desde já — foi considerada e
+recusada: ele ainda não usou o cartão, e antecipar a cobrança do encargo a quem
+talvez não fique com nenhuma sobra seria cobrar por um cenário que não aconteceu.
+
 `TipoLancamento.rateavel` · `RateioService.participantes` · testes
 `encargoERateadoEntreQuemUsou`, `encargoNaoVaiParaOTitularNaConciliacao`,
-`pagamentoAnteriorFicaComOTitular`
+`sobraDaConciliacaoEntraNoRateioDoEncargo`, `pagamentoAnteriorFicaComOTitular`
 
 ### 1.4.1 O admin confere a conta de cada pessoa, linha a linha
 
