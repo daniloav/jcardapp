@@ -468,6 +468,24 @@ h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
   select { margin: 0; min-width: 9rem; }
 }
 
+/* Barra de atribuição em massa, sobre o resultado da busca na conciliação.
+   Destaque porque manda dezenas de contas para o nome de alguém de uma vez —
+   tem de ficar claro que o botão ali embaixo não é sobre uma linha só. */
+.em-massa {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+  border-left: 4px solid var(--azul-claro);
+  background: var(--azul-suave);
+
+  > div:first-child { flex: 1 1 16rem; }
+  .meta { color: var(--texto-suave); font-size: 0.85rem; margin-top: 0.2rem; }
+  /* no celular o seletor e o botão ocupam a linha inteira, sem espremer */
+  .atribuir { margin-top: 0; flex-wrap: wrap; }
+}
+
 /* O lápis que abre o seletor de dono. Fica discreto até o hover: são 514 linhas,
    e um ícone forte em cada uma competiria com o valor da compra. */
 .btn-lapis {

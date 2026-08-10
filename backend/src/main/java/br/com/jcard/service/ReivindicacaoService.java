@@ -11,7 +11,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.jboss.logging.Logger;
 
@@ -137,41 +139,115 @@ public class ReivindicacaoService {
         if (l == null) {
             throw new WebApplicationException("Lançamento não encontrado.", 404);
         }
-        if (!l.fatura.aberta()) {
-            throw new WebApplicationException(
-                    "A fatura não está mais em avaliação.", 409);
-        }
+        exigirAvaliacaoAberta(l);
         if (!l.tipo.reivindicavel()) {
             throw new WebApplicationException(
                     "Encargos são rateados entre todos que usaram o cartão — "
                     + "não há como atribuí-los a uma pessoa.", 409);
         }
-        Usuario vencedor = Usuario.findById(vencedorId);
-        if (vencedor == null || !vencedor.ativo) {
-            throw new WebApplicationException("Utilizador inválido.", 400);
-        }
+        Usuario vencedor = exigirVencedor(vencedorId);
 
-        List<Reivindicacao> disputa = Reivindicacao.list("lancamento.id", lancamentoId);
-        for (Reivindicacao r : disputa) {
-            r.status = r.usuario.getId().equals(vencedorId)
-                    ? StatusReivindicacao.ACEITA
-                    : StatusReivindicacao.REJEITADA;
-            r.resolvidoEm = LocalDateTime.now();
-            r.resolvidoPor = admin;
-            r.persist();
-        }
-
-        // A divisão anterior era de quem perdeu a disputa; quem ganhou refaz a sua.
-        DivisaoLancamento.apagarDo(lancamentoId);
-        l.atribuirA(vencedor, OrigemAtribuicao.ADMIN);
-        l.persist();
-        atribuicao.registrarCompromisso(l, vencedor);
+        int disputantes = aplicarArbitragem(l, vencedor, admin);
         conciliacao.recalcularAcertos(l.fatura.getId());
-        notificacao.atribuidoPeloAdmin(l, vencedor, disputa.size() > 1);
+        notificacao.atribuidoPeloAdmin(l, vencedor, disputantes > 1);
         auditoria.registrar(admin, AcaoAuditoria.ARBITRAR, "Lancamento", l.id,
                 "atribuído a " + vencedor.nome
-                + (disputa.size() > 1 ? " (disputa entre " + disputa.size() + ")" : " (sem disputa)"));
+                + (disputantes > 1 ? " (disputa entre " + disputantes + ")" : " (sem disputa)"));
         return l;
+    }
+
+    /**
+     * A mesma decisão do {@link #arbitrar}, aplicada de uma vez a vários
+     * lançamentos — o resultado de uma busca na tela de conciliação.
+     *
+     * <p>Existe porque a alternativa é clicar 40 vezes: filtrar por "UBER" e
+     * dizer "isso tudo é da Maria" é uma decisão só, e repeti-la linha a linha
+     * só aumenta a chance de o admin errar uma delas.
+     *
+     * <p>Três cuidados que o caminho de um lançamento não precisa ter:
+     * <ul>
+     *   <li><b>Um e-mail, não N.</b> Quarenta avisos separados sobre a mesma
+     *       decisão seriam ignorados — e é justamente o aviso que torna a
+     *       atribuição contestável.</li>
+     *   <li><b>Um recálculo, não N.</b> Com o banco no Neon, recalcular os
+     *       acertos a cada linha multiplicaria a latência de rede sem mudar o
+     *       resultado: só o estado final importa.</li>
+     *   <li><b>Encargo não entra.</b> Ele é de todo mundo que usou o cartão, e
+     *       o lote pula em silêncio em vez de falhar inteiro — quem filtrou por
+     *       texto não escolheu o encargo, ele só caiu na busca.</li>
+     * </ul>
+     */
+    @Transactional
+    public ResultadoLote arbitrarEmLote(List<Long> lancamentoIds, Long vencedorId, Usuario admin) {
+        if (lancamentoIds == null || lancamentoIds.isEmpty()) {
+            throw new WebApplicationException("Nenhum lançamento selecionado.", 400);
+        }
+        Usuario vencedor = exigirVencedor(vencedorId);
+
+        List<Long> ids = lancamentoIds.stream().distinct().toList();
+        List<Lancamento> lancamentos = Lancamento.list("id in ?1 order by dataCompra", ids);
+        if (lancamentos.isEmpty()) {
+            throw new WebApplicationException("Lançamento não encontrado.", 404);
+        }
+        // Uma fatura por vez: o recálculo dos acertos é por fatura, e misturar
+        // competências numa ação só esconderia do admin o que ele está mexendo.
+        if (lancamentos.stream().map(l -> l.fatura.getId()).distinct().count() > 1) {
+            throw new WebApplicationException(
+                    "A atribuição em massa é de uma fatura por vez.", 400);
+        }
+        exigirAvaliacaoAberta(lancamentos.get(0));
+
+        List<Lancamento> atribuidos = new ArrayList<>();
+        BigDecimal valor = BigDecimal.ZERO;
+        int encargos = 0;
+        int jaEram = 0;
+
+        for (Lancamento l : lancamentos) {
+            if (!l.tipo.reivindicavel()) {
+                encargos++;
+                continue;
+            }
+            // Já é dele e inteiro: refazer não muda nada e só geraria linha de
+            // auditoria e mais uma reivindicação resolvida.
+            if (l.responsavel != null && l.responsavel.getId().equals(vencedorId)
+                    && DivisaoLancamento.count("lancamento.id", l.id) == 0) {
+                jaEram++;
+                continue;
+            }
+            aplicarArbitragem(l, vencedor, admin);
+            atribuidos.add(l);
+            valor = valor.add(l.valor);
+        }
+
+        if (!atribuidos.isEmpty()) {
+            Long faturaId = atribuidos.get(0).fatura.getId();
+            conciliacao.recalcularAcertos(faturaId);
+            if (atribuidos.size() == 1) {
+                notificacao.atribuidoPeloAdmin(atribuidos.get(0), vencedor, false);
+            } else {
+                notificacao.atribuidosEmLotePeloAdmin(atribuidos, vencedor, valor);
+            }
+            auditoria.registrar(admin, AcaoAuditoria.ARBITRAR, "Fatura", faturaId,
+                    atribuidos.size() + " lançamento(s) atribuídos a " + vencedor.nome
+                    + " em massa, somando R$ " + valor.toPlainString());
+        }
+
+        LOG.infof("Atribuição em massa para %s: %d atribuídos, %d já eram dele, %d encargo(s).",
+                vencedor.nome, atribuidos.size(), jaEram, encargos);
+        return new ResultadoLote(atribuidos.size(), valor, jaEram, encargos, vencedor.nome);
+    }
+
+    /**
+     * O que a atribuição em massa fez, para a tela poder dizê-lo em vez de só
+     * recarregar: o que foi pulado é a parte que o admin não vê acontecer.
+     *
+     * @param atribuidos quantos lançamentos mudaram de dono
+     * @param valor      quanto eles somam
+     * @param jaEram     quantos já eram da pessoa e ficaram como estavam
+     * @param encargos   quantos caíram na busca mas são rateados entre todos
+     */
+    public record ResultadoLote(int atribuidos, BigDecimal valor, int jaEram,
+                                int encargos, String usuarioNome) {
     }
 
     /** Lançamentos da fatura com dois ou mais pretendentes: a fila do admin. */
@@ -181,6 +257,47 @@ public class ReivindicacaoService {
     }
 
     // ------------------------------------------------------------ internos --
+
+    /**
+     * Põe o lançamento no nome do vencedor e fecha a disputa, sem recalcular
+     * acertos nem avisar ninguém — isso é do chamador, que sabe se está
+     * decidindo um lançamento ou quarenta.
+     *
+     * @return quantos pretendentes havia, para o e-mail distinguir desempate de
+     *         indicação
+     */
+    private int aplicarArbitragem(Lancamento l, Usuario vencedor, Usuario admin) {
+        List<Reivindicacao> disputa = Reivindicacao.list("lancamento.id", l.id);
+        for (Reivindicacao r : disputa) {
+            r.status = r.usuario.getId().equals(vencedor.id)
+                    ? StatusReivindicacao.ACEITA
+                    : StatusReivindicacao.REJEITADA;
+            r.resolvidoEm = LocalDateTime.now();
+            r.resolvidoPor = admin;
+            r.persist();
+        }
+
+        // A divisão anterior era de quem perdeu a disputa; quem ganhou refaz a sua.
+        DivisaoLancamento.apagarDo(l.id);
+        l.atribuirA(vencedor, OrigemAtribuicao.ADMIN);
+        l.persist();
+        atribuicao.registrarCompromisso(l, vencedor);
+        return disputa.size();
+    }
+
+    private Usuario exigirVencedor(Long vencedorId) {
+        Usuario vencedor = Usuario.findById(vencedorId);
+        if (vencedor == null || !vencedor.ativo) {
+            throw new WebApplicationException("Utilizador inválido.", 400);
+        }
+        return vencedor;
+    }
+
+    private void exigirAvaliacaoAberta(Lancamento l) {
+        if (!l.fatura.aberta()) {
+            throw new WebApplicationException("A fatura não está mais em avaliação.", 409);
+        }
+    }
 
     /**
      * Um pretendente pendente → leva o lançamento. Dois ou mais → conflito, o

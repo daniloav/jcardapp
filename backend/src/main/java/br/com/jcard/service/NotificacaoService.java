@@ -200,6 +200,41 @@ public class NotificacaoService {
                 "JcardApp · um lançamento foi atribuído a você", corpo));
     }
 
+    /**
+     * O admin pôs vários lançamentos de uma vez no nome de alguém.
+     *
+     * <p>Um e-mail só, com a lista inteira: quarenta avisos separados sobre a
+     * mesma decisão seriam ignorados em bloco, e é o aviso que torna a
+     * atribuição contestável. Por isso a lista vem com valor e data de cada
+     * linha — é sobre ela que a pessoa vai discordar, não sobre o total.
+     */
+    public void atribuidosEmLotePeloAdmin(List<Lancamento> lancamentos, Usuario dono,
+                                          BigDecimal total) {
+        if (!habilitado || dono == null || !dono.recebeNotificacoes
+                || dono.email == null || dono.email.isBlank() || lancamentos.isEmpty()) {
+            return;
+        }
+        String mes = lancamentos.get(0).fatura.competencia.format(MES);
+        StringBuilder linhas = new StringBuilder();
+        for (Lancamento l : lancamentos) {
+            linhas.append("<li><strong>%s</strong> — R$ %s em %s</li>"
+                    .formatted(l.descricao, valor(l.valor), l.dataCompra));
+        }
+        String corpo = """
+                <p>Olá, %s!</p>
+                <p>O administrador indicou que <strong>%d lançamento(s)</strong> da fatura de
+                <strong>%s</strong> são seus, somando <strong>R$ %s</strong>:</p>
+                <ul>%s</ul>
+                <p>Se algum não foi você, abra o app e use <strong>"não foi minha"</strong> no
+                lançamento enquanto a fatura estiver em avaliação: ele volta para a lista de
+                quem não tem dono e o administrador é avisado.</p>
+                <p><a href="%s">Abrir o JcardApp</a></p>
+                """.formatted(primeiroNome(dono.nome), lancamentos.size(), mes, valor(total),
+                linhas, appUrl);
+        dispatcher.enfileirar(Mail.withHtml(dono.email,
+                "JcardApp · " + lancamentos.size() + " lançamentos foram atribuídos a você", corpo));
+    }
+
     /** Fatura conciliada: cada um recebe quanto ficou devendo. */
     public void acertoDisponivel(Acerto a) {
         if (!habilitado || a.usuario.email == null || a.usuario.email.isBlank()) {

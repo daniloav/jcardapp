@@ -261,6 +261,120 @@ class FluxoDeIndicacaoTest {
         assertEquals(409, e.getResponse().getStatus());
     }
 
+    // ==================================== admin atribui o resultado da busca ===
+
+    @Test
+    @DisplayName("o resultado da busca inteiro vai para uma pessoa, e as contas continuam batendo")
+    void loteAtribuiTudoAUmaPessoa() {
+        Fatura f = novaFatura("2026-08", "150.00");
+        Lancamento uber1 = criar(f, "UBER TRIP 001", "50.00");
+        Lancamento uber2 = criar(f, "UBER TRIP 002", "40.00");
+        Lancamento uber3 = criar(f, "UBER TRIP 003", "30.00");
+        Lancamento padaria = criar(f, "PADARIA", "30.00");
+        conciliacao.validarLeitura(f.id);
+
+        ReivindicacaoService.ResultadoLote r = reivindicacoes.arbitrarEmLote(
+                java.util.List.of(uber1.id, uber2.id, uber3.id), maria.id, titular);
+
+        assertEquals(3, r.atribuidos());
+        assertEquals(0, new BigDecimal("120.00").compareTo(r.valor()));
+        assertEquals(maria.id, responsavelDe(uber1));
+        assertEquals(maria.id, responsavelDe(uber2));
+        assertEquals(maria.id, responsavelDe(uber3));
+        assertEquals(OrigemAtribuicao.ADMIN, origemDe(uber2),
+                "atribuir em massa é a mesma decisão do admin, uma por uma");
+        assertNull(responsavelDe(padaria), "o que estava fora da busca não pode ser tocado");
+
+        conciliacao.conciliar(f.id, titular);
+        assertEquals(0, new BigDecimal("120.00").compareTo(acerto(f, maria).valorDevido));
+        assertEquals(0, new BigDecimal("150.00").compareTo(somaDosAcertos(f)),
+                "a soma dos acertos tem de reproduzir o total também depois do lote");
+    }
+
+    @Test
+    @DisplayName("cada lançamento do lote segue contestável: quem recebeu devolve o que não é dele")
+    void loteContinuaContestavelLinhaALinha() {
+        Fatura f = novaFatura("2026-08", "90.00");
+        Lancamento uber1 = criar(f, "UBER TRIP 001", "50.00");
+        Lancamento uber2 = criar(f, "UBER TRIP 002", "40.00");
+        conciliacao.validarLeitura(f.id);
+        reivindicacoes.arbitrarEmLote(java.util.List.of(uber1.id, uber2.id), maria.id, titular);
+
+        reivindicacoes.desistir(uber2.id, maria);
+
+        assertEquals(maria.id, responsavelDe(uber1));
+        assertNull(responsavelDe(uber2),
+                "atribuir quarenta de uma vez não pode tirar de ninguém o 'não foi minha'");
+    }
+
+    @Test
+    @DisplayName("encargo que cair na busca é pulado, e o resto do lote passa")
+    void lotePulaEncargoSemFalhar() {
+        Fatura f = novaFatura("2026-08", "110.00");
+        Lancamento compra = criar(f, "UBER TRIP 001", "100.00");
+        Lancamento iof = criarComTipo(f, "IOF UBER", "10.00", TipoLancamento.IOF);
+        conciliacao.validarLeitura(f.id);
+
+        ReivindicacaoService.ResultadoLote r = reivindicacoes.arbitrarEmLote(
+                java.util.List.of(compra.id, iof.id), joao.id, titular);
+
+        assertEquals(1, r.atribuidos());
+        assertEquals(1, r.encargos());
+        assertEquals(joao.id, responsavelDe(compra));
+        assertNull(responsavelDe(iof),
+                "encargo é de todo mundo que usou o cartão — nem em massa ele ganha dono");
+    }
+
+    @Test
+    @DisplayName("o que já era da pessoa fica como está e não conta como atribuído")
+    void lotePulaOQueJaEraDela() {
+        Fatura f = novaFatura("2026-08", "90.00");
+        Lancamento dela = criar(f, "UBER TRIP 001", "50.00");
+        Lancamento doJoao = criar(f, "UBER TRIP 002", "40.00");
+        conciliacao.validarLeitura(f.id);
+        reivindicacoes.reivindicar(dela.id, maria, null);
+        reivindicacoes.reivindicar(doJoao.id, joao, null);
+
+        ReivindicacaoService.ResultadoLote r = reivindicacoes.arbitrarEmLote(
+                java.util.List.of(dela.id, doJoao.id), maria.id, titular);
+
+        assertEquals(1, r.atribuidos());
+        assertEquals(1, r.jaEram());
+        assertEquals(0, new BigDecimal("40.00").compareTo(r.valor()),
+                "o total do lote é o que mudou de mãos");
+        assertEquals(OrigemAtribuicao.MANUAL, origemDe(dela),
+                "o que ela já tinha assumido continua sendo dela, do jeito que era");
+        assertEquals(maria.id, responsavelDe(doJoao), "o do João passou para ela");
+    }
+
+    @Test
+    @DisplayName("o lote não atribui depois de a fatura sair da avaliação")
+    void loteForaDaAvaliacaoERecusado() {
+        Fatura f = novaFatura("2026-08", "100.00");
+        Lancamento l = criar(f, "UBER TRIP 001", "100.00");
+        conciliacao.validarLeitura(f.id);
+        conciliacao.conciliar(f.id, titular);
+
+        WebApplicationException e = assertThrows(WebApplicationException.class,
+                () -> reivindicacoes.arbitrarEmLote(java.util.List.of(l.id), joao.id, titular));
+        assertEquals(409, e.getResponse().getStatus());
+    }
+
+    @Test
+    @DisplayName("um lote é de uma fatura só: misturar competências esconderia o que se está mexendo")
+    void loteDeDuasFaturasERecusado() {
+        Fatura agosto = novaFatura("2026-08", "100.00");
+        Fatura setembro = novaFatura("2026-09", "100.00");
+        Lancamento a = criar(agosto, "UBER TRIP 001", "100.00");
+        Lancamento b = criar(setembro, "UBER TRIP 002", "100.00");
+
+        WebApplicationException e = assertThrows(WebApplicationException.class,
+                () -> reivindicacoes.arbitrarEmLote(java.util.List.of(a.id, b.id), joao.id, titular));
+        assertEquals(400, e.getResponse().getStatus());
+        assertNull(responsavelDe(a), "recusar o lote não pode deixar metade dele aplicada");
+        assertNull(responsavelDe(b));
+    }
+
     // ============================================ apelido e histórico ===
 
     @Test
@@ -382,6 +496,11 @@ class FluxoDeIndicacaoTest {
 
     @Transactional
     Lancamento criar(Fatura f, String descricao, String valor) {
+        return criarComTipo(f, descricao, valor, TipoLancamento.COMPRA);
+    }
+
+    @Transactional
+    Lancamento criarComTipo(Fatura f, String descricao, String valor, TipoLancamento tipo) {
         Lancamento l = new Lancamento();
         l.fatura = Fatura.findById(f.id);
         l.dataCompra = f.competencia.plusDays(5);
@@ -389,7 +508,7 @@ class FluxoDeIndicacaoTest {
         l.descricaoNormalizada = TextoFatura.normalizar(descricao);
         l.valor = new BigDecimal(valor);
         l.final4 = "1234";
-        l.tipo = TipoLancamento.COMPRA;
+        l.tipo = tipo;
         l.persist();
         return l;
     }

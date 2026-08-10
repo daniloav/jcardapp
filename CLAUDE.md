@@ -121,8 +121,9 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 98 testes, incluindo as duas
-  invariantes de conciliação, a divisão de contas, o rateio de encargos, o ciclo
+- **Backend**: `cd backend && mvn -B verify` — 104 testes, incluindo as duas
+  invariantes de conciliação, a atribuição em massa, a divisão de contas, o
+  rateio de encargos, o ciclo
   de pagamento com comprovante, a herança de parcela, a reabertura da avaliação,
   o fluxo da API por HTTP, as contagens agregadas da listagem e os dois leitores
   de fatura contra fixtures anonimizados (`fatura-itau-exemplo.csv` e `.txt`).
@@ -202,6 +203,13 @@ com troca de senha obrigatória.
   cada ida e volta custa latência de rede: era isso que fazia a primeira tela
   demorar. As contagens agregadas têm de responder o mesmo que o caminho por
   fatura — é o que `ListagemDeFaturasTest` defende.
+- **A atribuição em massa manda um e-mail e recalcula uma vez.** Mandar o
+  resultado de uma busca inteiro para uma pessoa é uma decisão só: quarenta
+  avisos separados seriam ignorados em bloco — e é o aviso que torna a
+  atribuição contestável —, e recalcular os acertos linha a linha multiplicaria
+  a latência do Neon sem mudar o resultado. Encargo que cair na busca é pulado
+  em silêncio em vez de derrubar o lote, e os ids vão da tela para o backend:
+  refazer o filtro no servidor faria o lote pegar linha que o admin não viu.
 - **O service worker não cacheia `/api`.** Dado financeiro não pode sobrar no
   disco do navegador nem ser servido desatualizado.
 - **Privacidade**: o utilizador vê o pool e as próprias contas — nunca o que
@@ -241,7 +249,7 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 98 testes verdes (`mvn verify`).
+- ✅ Backend completo, 104 testes verdes (`mvn verify`).
 - ✅ Frontend Angular 17 + PWA compilando (87 kB no bundle inicial).
 - ✅ **Tela inicial (`/inicio`)** — é onde o login cai: gráfico das faturas por mês
    (fechada, em andamento, divergente), os dois totais e "precisa de você", que
@@ -252,6 +260,10 @@ com troca de senha obrigatória.
 - ✅ **Fluxo de indicação (ROADMAP §2)** — reabrir a avaliação, admin atribuir
    direto, busca/agrupamento/desfazer no pool e apelido de estabelecimento;
    conferidos no app rodando, inclusive no tamanho de celular.
+- ✅ **Atribuição em massa na conciliação** — filtrar a lista e mandar o
+   resultado inteiro para uma pessoa, com confirmação que diz quantos trocam de
+   dono. Conferida no app rodando (11 lançamentos de uma busca real: 8
+   atribuídos, 3 já eram da pessoa) e no tamanho de celular.
 - ✅ CI/CD escritos; o CD roda em **modo mock** enquanto os secrets `OCI_*`
   estiverem vazios — a esteira fica verde antes de as VMs existirem.
 - ⏳ **VM ainda não provisionada.** Migramos de Oracle para GCP + Neon depois de

@@ -219,6 +219,45 @@ import {
                [ngModel]="filtro()" (ngModelChange)="filtro.set($event)"
                placeholder="parte do nome ou da pessoa">
       </label>
+
+      <!-- "Isso tudo é da Maria": a busca por 'UBER' devolve 40 linhas, e mandar
+           as 40 de uma vez é a mesma decisão que clicar 40 lápis — só sem a
+           chance de errar uma delas. Só aparece com filtro: sem ele o botão
+           levaria a fatura inteira para uma pessoa com um clique. -->
+      @if (filtro().trim() && atribuiveis().length > 0) {
+        <div class="cartao em-massa">
+          <div>
+            <strong>
+              Atribuir os {{ atribuiveis().length }} resultados a uma pessoa
+            </strong>
+            <div class="meta">
+              {{ somaAtribuiveis() | currency: 'BRL' }} no total.
+              @if (jaTemDono() > 0) {
+                {{ jaTemDono() }} já tem dono e vai trocar de mãos.
+              }
+              @if (encargosNoResultado() > 0) {
+                {{ encargosNoResultado() }} encargo(s) do resultado ficam de fora — são
+                rateados entre todos que usaram o cartão.
+              }
+              Todo mundo que receber é avisado por e-mail e pode devolver ao pool.
+            </div>
+          </div>
+          <div class="atribuir">
+            <select [ngModel]="donoEmMassa()" (ngModelChange)="donoEmMassa.set($event)"
+                    aria-label="Atribuir o resultado da busca a" name="donoEmMassa">
+              <option [ngValue]="null">Foi de quem?</option>
+              @for (u of utilizadores(); track u.id) {
+                <option [ngValue]="u.id">{{ u.nome }}</option>
+              }
+            </select>
+            <button type="button" [disabled]="!donoEmMassa() || atribuindoEmMassa()"
+                    (click)="atribuirEmMassa()">
+              Atribuir {{ atribuiveis().length }}
+            </button>
+          </div>
+        </div>
+      }
+
       <div class="rolavel">
         <table>
           <thead>
@@ -326,6 +365,9 @@ export class AdminFaturaComponent {
   /** O lançamento com o seletor de dono aberto — um de cada vez. */
   editando = signal<number | null>(null);
   escolha: Record<number, number | null> = {};
+  /** Para quem vai o resultado inteiro da busca. */
+  donoEmMassa = signal<number | null>(null);
+  atribuindoEmMassa = signal(false);
   motivo = '';
 
   private faturaId = 0;
@@ -346,6 +388,21 @@ export class AdminFaturaComponent {
       `${l.apelido ?? ''} ${l.descricao} ${l.responsavelNome ?? ''}`
         .toLowerCase().includes(termo));
   });
+
+  /** Do resultado da busca, o que a atribuição em massa realmente leva. */
+  atribuiveis = computed<Lancamento[]>(() =>
+    this.lancamentosFiltrados().filter((l) => this.podeAtribuir(l)));
+
+  somaAtribuiveis = computed<number>(() =>
+    this.atribuiveis().reduce((s, l) => s + l.valor, 0));
+
+  /** Quantos do resultado já são de alguém — vão trocar de dono, não ganhar um. */
+  jaTemDono = computed<number>(() =>
+    this.atribuiveis().filter((l) => this.temDono(l)).length);
+
+  /** Encargos que caíram na busca: não se atribuem, então o lote os pula. */
+  encargosNoResultado = computed<number>(() =>
+    this.lancamentosFiltrados().filter((l) => this.rateado(l)).length);
 
   somaAcertos(): number {
     return (this.detalhe()?.acertos ?? []).reduce((s, a) => s + a.valorDevido, 0);
@@ -467,6 +524,52 @@ export class AdminFaturaComponent {
         this.toast.ok(`Lançamento atribuído a ${nome} — avisamos por e-mail.`);
         this.carregar();
       },
+    });
+  }
+
+  /**
+   * Manda o resultado inteiro da busca para uma pessoa.
+   *
+   * <p>Confirma antes com o número, o total e o que a operação desfaz: é uma
+   * decisão sobre dinheiro de outras pessoas multiplicada por quarenta, e o
+   * filtro pode ter trazido linha que o admin não esperava. Depois de confirmar,
+   * ainda dá para desfazer uma a uma — o lápis continua ali e quem recebeu pode
+   * responder "não foi minha".
+   */
+  atribuirEmMassa(): void {
+    const dono = this.donoEmMassa();
+    const alvos = this.atribuiveis();
+    if (!dono || alvos.length === 0) {
+      return;
+    }
+    const nome = this.utilizadores().find((u) => u.id === dono)?.nome ?? 'a pessoa';
+    const total = this.somaAtribuiveis().toLocaleString('pt-BR',
+      { style: 'currency', currency: 'BRL' });
+    const trocam = this.jaTemDono();
+    const divididos = alvos.filter((l) => l.divisao.length > 0).length;
+
+    const ok = confirm(
+      `Atribuir ${alvos.length} lançamento(s) a ${nome}?\n\n`
+      + `Somam ${total}.\n`
+      + (trocam > 0 ? `${trocam} já tem dono e vai passar para ${nome}.\n` : '')
+      + (divididos > 0 ? `${divididos} está(ão) com a conta dividida — a divisão é desfeita.\n` : '')
+      + `${nome} recebe um e-mail com a lista e pode devolver ao pool o que não for dele(a).`);
+    if (!ok) {
+      return;
+    }
+
+    this.atribuindoEmMassa.set(true);
+    this.api.arbitrarLote(alvos.map((l) => l.id), dono).subscribe({
+      next: (r) => {
+        const pulados = r.jaEram + r.encargos;
+        this.toast.ok(
+          `${r.atribuidos} lançamento(s) para ${r.usuarioNome} — avisamos por e-mail.`
+          + (pulados > 0 ? ` ${pulados} ficaram como estavam.` : ''));
+        this.donoEmMassa.set(null);
+        this.atribuindoEmMassa.set(false);
+        this.carregar();
+      },
+      error: () => this.atribuindoEmMassa.set(false),
     });
   }
 

@@ -107,6 +107,22 @@ public class LancamentoResource {
     }
 
     /**
+     * A mesma decisão para vários lançamentos de uma vez — o resultado de uma
+     * busca na conciliação indo para uma pessoa só.
+     *
+     * <p>Não fica sob {@code /{id}} porque a ação é sobre o conjunto. Encargos
+     * que caírem na seleção são pulados em silêncio, e a resposta diz o que foi
+     * feito e o que foi pulado.
+     */
+    @POST
+    @Path("/arbitrar-lote")
+    @RolesAllowed(TokenService.ADMIN)
+    @Transactional
+    public ReivindicacaoService.ResultadoLote arbitrarLote(@Valid Requests.ArbitrarLote req) {
+        return servico.arbitrarEmLote(req.lancamentoIds(), req.vencedorId(), logado.get());
+    }
+
+    /**
      * Batiza o estabelecimento deste lançamento.
      *
      * <p>Qualquer utilizador apelida: quem reconhece a loja é quem comprou nela.

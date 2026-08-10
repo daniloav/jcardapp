@@ -35,6 +35,21 @@ public final class Requests {
     }
 
     /**
+     * "Isso tudo é da Maria": o resultado de uma busca na conciliação indo para
+     * uma pessoa só.
+     *
+     * <p>Os ids vêm da tela porque o filtro é dela — mandar o termo da busca
+     * para o backend refazer a consulta faria o lote pegar linha que o admin não
+     * viu na lista. O teto de 1000 é a fatura inteira com folga (a maior real
+     * tem 514) e evita que um payload absurdo trave a transação.
+     */
+    public record ArbitrarLote(
+            @NotNull(message = "Escolha quem fica com os lançamentos") Long vencedorId,
+            @NotNull @Size(min = 1, max = 1000, message = "Selecione de 1 a 1000 lançamentos")
+            java.util.List<Long> lancamentoIds) {
+    }
+
+    /**
      * Por que a fatura está voltando para avaliação.
      *
      * <p>Opcional para não travar a correção urgente, mas vai no e-mail de quem
