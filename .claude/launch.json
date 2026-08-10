@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "jcard-backend",
+      "runtimeExecutable": "mvn",
+      "runtimeArgs": ["-f", "backend/pom.xml", "quarkus:dev"],
+      "port": 8080
+    },
+    {
       "name": "jcard-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start", "--prefix", "frontend"],

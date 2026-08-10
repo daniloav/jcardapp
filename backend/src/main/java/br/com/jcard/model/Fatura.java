@@ -67,9 +67,21 @@ public class Fatura extends EntidadeBase {
         return find("hashPdf", hash).firstResult();
     }
 
-    /** Faturas mais recentes primeiro — ordem natural das telas. */
-    public static java.util.List<Fatura> recentes() {
-        return list("order by competencia desc, id desc");
+    /**
+     * Faturas mais recentes primeiro — ordem natural das telas.
+     *
+     * <p>Devolve {@link ResumoFatura}, e não a entidade, para deixar o
+     * {@link #textoExtraido} no banco: quem lista quer competência, total e
+     * status, não a fatura em texto de todos os meses.
+     */
+    public static java.util.List<ResumoFatura> resumosRecentes() {
+        return getEntityManager().createQuery("""
+                select new br.com.jcard.model.ResumoFatura(
+                       f.id, f.competencia, f.vencimento, f.valorTotal, f.valorLancado,
+                       f.status, f.emissor, f.importadaEm)
+                  from Fatura f
+                 order by f.competencia desc, f.id desc
+                """, ResumoFatura.class).getResultList();
     }
 
     /** A divergência entre o total impresso e o que conseguimos ler. */

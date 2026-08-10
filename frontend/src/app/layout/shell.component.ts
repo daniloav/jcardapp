@@ -25,7 +25,7 @@ import { APP_VERSION } from '../version';
 
         <aside class="barra-lateral" [class.aberta]="menuAberto()">
           <div class="marca">
-            <a routerLink="/faturas">
+            <a routerLink="/inicio">
               💳 JcardApp
               <span class="versao">v{{ versao }}</span>
             </a>
@@ -34,6 +34,9 @@ import { APP_VERSION } from '../version';
           </div>
 
           <nav aria-label="Navegação principal" (click)="fecharNoCelular()">
+            <a routerLink="/inicio" routerLinkActive="ativo">
+              <span class="ico" aria-hidden="true">📊</span> Início
+            </a>
             <a routerLink="/faturas" routerLinkActive="ativo">
               <span class="ico" aria-hidden="true">🧾</span> Faturas
             </a>

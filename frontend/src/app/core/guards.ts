@@ -30,7 +30,7 @@ export const adminGuard: CanActivateFn = (rota, estado) => {
   }
   if (!auth.isAdmin()) {
     toast.erro('Essa área é só do administrador.');
-    return router.createUrlTree(['/faturas']);
+    return router.createUrlTree(['/inicio']);
   }
   return true;
 };
@@ -39,5 +39,5 @@ export const adminGuard: CanActivateFn = (rota, estado) => {
 export const visitanteGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const router = inject(Router);
-  return auth.autenticado() ? router.createUrlTree(['/faturas']) : true;
+  return auth.autenticado() ? router.createUrlTree(['/inicio']) : true;
 };
