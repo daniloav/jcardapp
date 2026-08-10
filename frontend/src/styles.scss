@@ -10,6 +10,9 @@
   --texto: #1c2b33;
   --texto-suave: #5a6c78;
   --borda: #dde3e8;
+  /* o azul de fundo da linha que já tem dono — claro o bastante para o texto
+     escuro continuar passando no contraste AA */
+  --azul-suave: #e7f0f7;
   --erro: #b3261e;
   --ok: #1b7f4b;
   --alerta: #9a6700;
@@ -190,6 +193,22 @@ h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
   select { margin: 0; min-width: 9rem; }
 }
 
+/* O lápis que abre o seletor de dono. Fica discreto até o hover: são 514 linhas,
+   e um ícone forte em cada uma competiria com o valor da compra. */
+.btn-lapis {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--azul-claro);
+  padding: 0.2rem 0.3rem;
+  margin-left: 0.35rem;
+  line-height: 0;
+  vertical-align: middle;
+
+  svg { width: 1rem; height: 1rem; display: block; }
+
+  &:hover:not(:disabled) { background: rgba(27, 86, 112, 0.12); }
+}
+
 /* --------------------------------------------------------- conta dividida -- */
 
 /* As partes de uma conta rachada, abaixo da descrição do lançamento. */
@@ -342,6 +361,15 @@ table {
   th, td { padding: 0.6rem 0.7rem; text-align: left; border-bottom: 1px solid var(--borda); }
   th { background: #eef2f5; font-size: 0.85rem; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Linha que já tem dono. A cor é o resumo da tela: bate o olho e se vê o que
+     falta resolver, sem ler a coluna de responsável linha a linha. A faixa à
+     esquerda vai de `box-shadow` para não empurrar o texto meio pixel. */
+  tr.com-dono > td {
+    background: var(--azul-suave);
+
+    &:first-child { box-shadow: inset 3px 0 0 var(--azul-claro); }
+  }
 }
 
 /* -------------------------------------------------------------- toasts -- */
