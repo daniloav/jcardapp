@@ -61,6 +61,34 @@ ele desligaria o rateio. `PAGAMENTO` (quitação da fatura anterior) fica de for
 `encargoERateadoEntreQuemUsou`, `encargoNaoVaiParaOTitularNaConciliacao`,
 `pagamentoAnteriorFicaComOTitular`
 
+### 1.4.1 O admin confere a conta de cada pessoa, linha a linha
+
+"R$ 53,33" não diz se o IOF entrou. A conferência abre a conta de qualquer
+utilizador — **inclusive de quem não tem acerto**, que é onde mora a dúvida — e
+mostra as compras com a fatia de cada uma, os encargos com o valor cheio e o
+divisor, e o total.
+
+Três coisas que ela deixa explícito, e que nenhum total sozinho responde:
+
+- **se a pessoa é participante**, e, quando não é, entre quem os encargos estão
+  sendo divididos hoje — a resposta para "por que ela não entrou no rateio?" é
+  sempre a mesma: não tem lançamento assumido nesta fatura;
+- **de onde veio cada compra** (assumida, atribuída, herdada de parcela, sobra
+  da conciliação, parte de conta dividida);
+- **se o acerto gravado bate com o rateio recalculado agora**. Diferença aqui
+  denuncia acerto congelado — quem já pagou não é recalculado, de propósito
+  (§5) — e é o sinal de que aquele acerto precisa ser reaberto antes de
+  conciliar de novo.
+
+Sai do **mesmo** `RateioService.ratear` da tela da pessoa e da conciliação.
+Conferir contra um segundo cálculo não provaria nada: provaria só que os dois
+cálculos concordam entre si.
+
+`GET /api/faturas/{id}/utilizadores/{usuarioId}/detalhe` (admin) ·
+`FaturaResource.detalheDoUtilizador` · `RateioService.participantesDa` · testes
+`detalheDaContaMostraOEncargoRateado`,
+`detalheDeQuemNaoAssumiuNadaExplicaOPorque`, `detalheDaContaESoDoAdmin`
+
 ### 1.5 A soma das partes reproduz o valor do lançamento
 
 Uma conta dividida grava uma linha por pessoa em `divisao_lancamento`, e a soma
