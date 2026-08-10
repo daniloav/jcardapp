@@ -1,35 +1,53 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';
+import { APP_VERSION } from '../version';
 
 @Component({
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   template: `
-    <div class="centro">
-      <h1>JcardApp</h1>
-      <p class="sub">Entre para ver as contas da fatura.</p>
+    <div class="tela-auth">
+      <div class="caixa-auth">
+        <div class="marca-auth">
+          <div class="icone" aria-hidden="true">💳</div>
+          <h1>JcardApp</h1>
+          <p>Entre para ver as contas da fatura.</p>
+        </div>
 
-      @if (motivo()) {
-        <div class="aviso">{{ motivo() }}</div>
-      }
+        @if (motivo()) {
+          <div class="aviso">{{ motivo() }}</div>
+        }
 
-      <form class="cartao" (ngSubmit)="entrar()">
-        <label for="login">
-          Login
-          <input id="login" name="login" [(ngModel)]="login" autocomplete="username"
-                 autocapitalize="none" required />
-        </label>
-        <label for="senha">
-          Senha
-          <input id="senha" name="senha" type="password" [(ngModel)]="senha"
-                 autocomplete="current-password" required />
-        </label>
-        <button type="submit" [disabled]="carregando()">
-          {{ carregando() ? 'Entrando…' : 'Entrar' }}
-        </button>
-      </form>
+        <form (ngSubmit)="entrar()">
+          <label for="login">
+            Login
+            <input id="login" name="login" [(ngModel)]="login" autocomplete="username"
+                   autocapitalize="none" required />
+          </label>
+          <label for="senha">
+            Senha
+            <input id="senha" name="senha" type="password" [(ngModel)]="senha"
+                   autocomplete="current-password" required />
+          </label>
+          <button type="submit" [disabled]="carregando()">
+            {{ carregando() ? 'Entrando…' : 'Entrar' }}
+          </button>
+        </form>
+
+        <a class="link-auth" routerLink="/recuperar">Esqueci minha senha</a>
+
+        <a class="link-treinamentos" href="assets/tutoriais/index.html"
+           target="_blank" rel="noopener">
+          🎓 Primeira vez? Veja como usar o app
+        </a>
+
+        <p class="creditos">
+          Desenvolvido por <a href="mailto:danilo.av&#64;gmail.com">Luke Skywalker</a>
+          <span class="versao">v{{ versao }}</span>
+        </p>
+      </div>
     </div>
   `,
 })
@@ -38,6 +56,7 @@ export class LoginComponent {
   private router = inject(Router);
   private rota = inject(ActivatedRoute);
 
+  versao = APP_VERSION;
   login = '';
   senha = '';
   carregando = signal(false);

@@ -10,6 +10,11 @@ export const rotas: Routes = [
     title: 'Entrar · JcardApp',
   },
   {
+    path: 'recuperar',
+    loadComponent: () => import('./pages/recuperar.component').then((m) => m.RecuperarComponent),
+    title: 'Esqueci minha senha · JcardApp',
+  },
+  {
     path: 'trocar-senha',
     loadComponent: () =>
       import('./pages/trocar-senha.component').then((m) => m.TrocarSenhaComponent),
