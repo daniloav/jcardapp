@@ -152,6 +152,37 @@ decidiu".
 `ReivindicacaoService.arbitrar` · `NotificacaoService.atribuidoPeloAdmin` ·
 testes `adminArbitra`, `adminAtribuiSemDisputa`, `atribuicaoDoAdminEContestavel`
 
+### 3.4.1 O admin atribui o resultado de uma busca inteiro
+
+Filtrar por "UBER" na conciliação e dizer "isso tudo é da Maria" é **uma**
+decisão; repeti-la nas quarenta linhas só aumenta a chance de errar uma delas.
+O lote aplica exatamente o §3.4 a cada lançamento — origem `ADMIN`, disputa
+resolvida, compromisso de parcela criado — e cada um continua contestável
+individualmente com "não foi minha".
+
+O que o lote faz diferente do caminho de um lançamento:
+
+- **um e-mail, não N** — quarenta avisos separados sobre a mesma decisão seriam
+  ignorados em bloco, e é o aviso que torna a atribuição contestável;
+- **um recálculo de acertos, não N** — só o estado final importa, e com o banco
+  no Neon cada ida e volta custa latência;
+- **encargo é pulado em silêncio** (§3.5), em vez de derrubar o lote inteiro:
+  quem filtrou por texto não escolheu o encargo, ele só caiu na busca;
+- **o que já era da pessoa fica como está** — refazer não mudaria nada e só
+  geraria linha de auditoria;
+- **uma fatura por vez** (400 se os ids misturarem competências) e só com a
+  fatura em avaliação (409), como qualquer atribuição.
+
+Os ids vão da tela para o backend, não o termo da busca: refazer a consulta no
+servidor faria o lote pegar linha que o admin não viu na lista.
+
+`ReivindicacaoService.arbitrarEmLote` ·
+`NotificacaoService.atribuidosEmLotePeloAdmin` ·
+`POST /api/lancamentos/arbitrar-lote` · testes `loteAtribuiTudoAUmaPessoa`,
+`loteContinuaContestavelLinhaALinha`, `lotePulaEncargoSemFalhar`,
+`lotePulaOQueJaEraDela`, `loteForaDaAvaliacaoERecusado`,
+`loteDeDuasFaturasERecusado`
+
 ### 3.5 Encargos não se reivindicam nem se arbitram
 
 `ENCARGO`, `ANUIDADE`, `IOF`, `AJUSTE` e `PAGAMENTO` não são reivindicáveis: são

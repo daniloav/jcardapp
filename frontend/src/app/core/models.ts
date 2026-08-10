@@ -148,6 +148,21 @@ export interface DetalheFatura {
 }
 
 /**
+ * O que a atribuição em massa fez. O que foi pulado importa tanto quanto o que
+ * foi atribuído: é a parte que o admin não vê acontecer.
+ */
+export interface ResultadoLote {
+  /** Quantos lançamentos mudaram de dono. */
+  atribuidos: number;
+  valor: number;
+  /** Já eram da pessoa e ficaram como estavam. */
+  jaEram: number;
+  /** Caíram na busca mas são rateados entre todos que usaram o cartão. */
+  encargos: number;
+  usuarioNome: string;
+}
+
+/**
  * Descrição sem o sufixo de parcela.
  *
  * <p>A descrição vem crua do PDF ("POSTO SHELL CENTRO 03/10") e a tela já mostra

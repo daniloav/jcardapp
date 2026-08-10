@@ -2,7 +2,8 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
-  Acerto, Cartao, DetalheFatura, Fatura, Lancamento, MinhasContas, Pessoa, Pix, Usuario,
+  Acerto, Cartao, DetalheFatura, Fatura, Lancamento, MinhasContas, Pessoa, Pix,
+  ResultadoLote, Usuario,
 } from './models';
 
 /** Ponto único de acesso à API. Todo componente passa por aqui. */
@@ -85,6 +86,15 @@ export class ApiService {
   arbitrar(lancamentoId: number, vencedorId: number): Observable<Lancamento> {
     return this.http.post<Lancamento>(
       `/api/lancamentos/${lancamentoId}/arbitrar`, { vencedorId });
+  }
+
+  /**
+   * A mesma decisão para o resultado inteiro de uma busca. Os ids vão da tela
+   * para o backend — mandar o termo faria o lote pegar linha que o admin não viu.
+   */
+  arbitrarLote(lancamentoIds: number[], vencedorId: number): Observable<ResultadoLote> {
+    return this.http.post<ResultadoLote>(
+      '/api/lancamentos/arbitrar-lote', { vencedorId, lancamentoIds });
   }
 
   /** Racha a conta. A soma das partes precisa fechar com o valor do lançamento. */
