@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JcardApp — Guia: Primeiro acesso</title>
+<link rel="stylesheet" href="player.css">
+<style>
+  .fld{ margin-bottom:9px; }
+  .fld label{ display:block; font-size:9.5px; color:var(--ap-muted); margin-bottom:3px; }
+  .inp{ border:1px solid var(--ap-border); background:var(--ap-surface); border-radius:8px;
+        padding:8px 10px; font-size:11.5px; color:var(--ap-ink); }
+  .inp.vazio{ color:var(--ap-muted); }
+  .caixalogin{ flex:1; display:flex; align-items:center; justify-content:center;
+     background:linear-gradient(135deg,var(--ap-azul),var(--ap-azul2)); padding:18px; }
+  .cx{ background:var(--ap-surface); border-radius:12px; padding:16px 18px; width:230px; max-width:70%;
+       box-shadow:0 12px 30px rgba(0,0,0,.3); }
+  .cx .logo{ text-align:center; margin-bottom:10px; }
+  .cx .logo .bkk{ font-size:22px; }
+  .cx .logo b{ display:block; font-size:13px; margin-top:2px; }
+  .cx .logo small{ color:var(--ap-muted); font-size:9.5px; }
+  .cx .btnp{ width:100%; text-align:center; margin-top:4px; }
+  .cx .aux{ text-align:center; font-size:9px; color:var(--ap-azul2); margin-top:7px; }
+  .cx .treino{ display:block; text-align:center; border:1px solid var(--ap-border); border-radius:8px;
+               padding:6px; font-size:9.5px; font-weight:700; color:var(--ap-azul); margin-top:8px; }
+  .cx .cred{ text-align:center; font-size:8px; color:var(--ap-muted); margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="brand"><span class="bk">👋</span> JcardApp <small>· Guia de uso</small></div>
+    <div class="step"><span id="stepNow">1</span> / <span id="stepTot">6</span> · Primeiro acesso</div>
+  </div>
+  <div class="player">
+    <div class="stage" id="stage">
+
+      <section class="scene on">
+        <div class="cover">
+          <div class="bk">👋</div>
+          <h1>Primeiro acesso</h1>
+          <div class="rule"></div>
+          <p>Entrar, criar a sua senha e entender o que o app faz com a fatura do cartão.</p>
+          <div class="tagl">Para quem usa o cartão</div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">Por que este app existe</b>
+            <span>Várias pessoas usam <span class="destaque">o mesmo cartão</span>. Quando a
+            fatura fecha, ninguém lembra quem gastou o quê.</span>
+            <span style="margin-top:8px">O app quebra a fatura compra a compra e
+            <span class="destaque">cada um marca o que é seu</span>.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:190px; max-width:300px">
+            <div class="grph">Fatura de 03/2026 <span>R$ 4.812,90</span></div>
+            <div class="lin"><div><div class="d">Padaria do Zé</div><div class="m">03/03</div></div><div class="v">R$ 38,40</div></div>
+            <div class="lin"><div><div class="d">Posto Ipiranga</div><div class="m">05/03</div></div><div class="v">R$ 250,00</div></div>
+            <div class="lin"><div><div class="d">Farmácia Pague Menos</div><div class="m">07/03</div></div><div class="v">R$ 96,70</div></div>
+            <div class="lin"><div><div class="d">DL*UberRides</div><div class="m">08/03</div></div><div class="v">R$ 21,90</div></div>
+            <div style="margin-top:8px"><span class="pill w">quem gastou o quê?</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="caixalogin">
+          <div class="cx">
+            <div class="logo"><div class="bkk">💳</div><b>JcardApp</b><small>Entre para ver as contas da fatura.</small></div>
+            <div class="fld"><label>Login</label><div class="inp">maria.silva</div></div>
+            <div class="fld"><label>Senha</label><div class="inp">••••••••</div></div>
+            <div class="btnp glow">Entrar</div>
+            <div class="aux">Esqueci minha senha</div>
+            <div class="treino">🎓 Primeira vez? Veja como usar o app</div>
+            <div class="cred">Desenvolvido por Luke Skywalker · v1.0.0</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">Troque a senha</b>
+            <span>A primeira senha chega por e-mail e é provisória: o app
+            <span class="destaque">só deixa passar depois que você criar a sua</span>.</span>
+            <span style="margin-top:8px">Perdeu a senha depois? Use "Esqueci minha senha" no
+            login — quem reseta é o administrador do cartão.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:190px; max-width:280px">
+            <h4 style="margin:0 0 3px; font-size:14px">Trocar senha</h4>
+            <div class="sub" style="font-size:10px; color:var(--ap-muted); margin-bottom:10px">Obrigatório no primeiro acesso</div>
+            <div class="fld"><label>Senha atual</label><div class="inp">••••••••</div></div>
+            <div class="fld"><label>Senha nova</label><div class="inp">••••••••••</div></div>
+            <div class="btnp glow">Salvar</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="phonewrap">
+          <div class="phone">
+            <div class="scr">
+              <div class="top"><div class="ham">☰</div><b>💳 JcardApp</b></div>
+              <div class="body">
+                <div class="cardui" style="padding:9px 10px">
+                  <div style="font-weight:700; font-size:10.5px">Fatura de 03/2026</div>
+                  <div class="m" style="font-size:9px; color:var(--ap-muted)">R$ 4.812,90 · 514 lançamentos</div>
+                  <div style="margin-top:6px"><span class="pill w">37 sem dono</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone">
+            <div class="scr">
+              <div class="top"><div class="ham">☰</div><b>💳 JcardApp</b></div>
+              <div class="backdrop"></div>
+              <div class="drawer">
+                <div class="dm">💳 JcardApp</div>
+                <div class="di act">🧾 Faturas</div>
+                <div class="di">💸 Meus acertos</div>
+                <div class="di" style="margin-top:10px; border-top:1px solid rgba(255,255,255,.12); padding-top:8px">🎓 Treinamentos</div>
+                <div class="di">🔒 Trocar senha</div>
+                <div class="di">↩ Sair</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="cover">
+          <div class="bk">✅</div>
+          <h1>Você está dentro</h1>
+          <div class="rule"></div>
+          <p>Agora é abrir a fatura do mês e marcar o que foi você.</p>
+          <div class="next">
+            <span class="chip">Assumir uma conta</span>
+            <span class="chip">Dividir uma conta</span>
+            <span class="chip">Aceitar e pagar</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="replay" id="replay"><button id="replayBtn">↻ Assistir de novo</button></div>
+    </div>
+    <div class="cap"><p id="caption"></p></div>
+    <div class="ctrl">
+      <button class="btn" id="prev" aria-label="Anterior">⏮</button>
+      <button class="btn play" id="play" aria-label="Pausar">⏸</button>
+      <button class="btn" id="next" aria-label="Próximo">⏭</button>
+      <div class="segs" id="segs"></div>
+    </div>
+  </div>
+  <div class="foot">
+    Guia do JcardApp · avança sozinho — ⏸ pausa, ⏭ / ⏮ navegam (ou as setas do teclado).
+    <a href="index.html">← Voltar aos treinamentos</a>
+  </div>
+</div>
+<script>
+  window.CAPTIONS = [
+    ['Bem-vindo. ', 'Em pouco mais de um minuto você entende o que o app faz e como entrar.'],
+    ['O problema: ', 'várias pessoas usam o mesmo cartão e a fatura chega com tudo misturado. O app separa compra a compra para cada um marcar a sua.'],
+    ['Entrar é simples: ', 'o login e a senha provisória chegam no seu e-mail quando o administrador cria a sua conta.'],
+    ['No primeiro acesso ', 'o app pede uma senha nova. Escolha uma sua — a provisória deixa de valer na hora.'],
+    ['O menu fica no ☰ ', 'no canto de cima. Ali estão as faturas, os seus acertos e estes treinamentos.'],
+    ['Pronto. ', 'O próximo guia mostra como marcar uma compra como sua.']
+  ];
+  window.DURS = [6000, 10000, 8000, 9000, 8500, 7000];
+</script>
+<script src="player.js"></script>
+</body>
+</html>

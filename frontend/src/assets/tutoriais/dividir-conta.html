@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JcardApp — Guia: Dividir uma conta</title>
+<link rel="stylesheet" href="player.css">
+<style>
+  .editor{ background:#f7f9fb; border:1px solid var(--ap-border); border-radius:10px; padding:10px 12px; }
+  .prow{ display:flex; align-items:center; gap:9px; padding:4px 0; font-size:11px; }
+  .prow .nm{ flex:1; font-weight:600; }
+  .prow .bx{ width:12px; height:12px; border:1.5px solid var(--ap-muted); border-radius:3px; display:inline-block; }
+  .prow .bx.on{ background:var(--ap-azul); border-color:var(--ap-azul); position:relative; }
+  .prow .bx.on::after{ content:"✓"; color:#fff; font-size:9px; position:absolute; left:1.5px; top:-2px; }
+  .prow .val{ width:74px; text-align:right; border:1px solid var(--ap-border); background:var(--ap-surface);
+              border-radius:7px; padding:4px 7px; font-size:10.5px; }
+  .soma{ margin-top:7px; padding-top:7px; border-top:1px solid var(--ap-border); font-size:10.5px; font-weight:600; }
+  .soma.ok{ color:var(--ap-green); }
+  .soma.erro{ color:var(--ap-red); }
+  .partes{ margin:4px 0 0; padding-left:14px; color:var(--ap-muted); font-size:9.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="brand"><span class="bk">🤝</span> JcardApp <small>· Guia de uso</small></div>
+    <div class="step"><span id="stepNow">1</span> / <span id="stepTot">6</span> · Dividir uma conta</div>
+  </div>
+  <div class="player">
+    <div class="stage" id="stage">
+
+      <section class="scene on">
+        <div class="cover">
+          <div class="bk">🤝</div>
+          <h1>Dividir uma conta</h1>
+          <div class="rule"></div>
+          <p>Quando a compra foi de mais de uma pessoa: cada uma paga a sua parte.</p>
+          <div class="tagl">Jantar, mercado, viagem</div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">Primeiro assuma, depois divida</b>
+            <span>Quem <span class="destaque">assumiu</span> a compra é quem organiza a
+            divisão — o botão "Dividir" fica na sua lista.</span>
+            <span style="margin-top:8px">Continua sendo você quem herda as próximas parcelas,
+            mesmo com a conta rachada.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:200px; max-width:300px">
+            <div class="lin meu">
+              <div><div class="d">Restaurante Fogo de Chão</div><div class="m">14/03 · <span class="pill gray">assumida</span></div></div>
+              <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px">
+                <div class="v">R$ 300,00</div>
+                <span class="btns glow">Dividir</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <h4>Minhas contas (4)</h4>
+            <div class="sub">Dividir Restaurante Fogo de Chão · R$ 300,00</div>
+            <div class="editor">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px">
+                <b style="font-size:11px">Quem estava na mesa?</b>
+                <span class="btns">Dividir igualmente</span>
+              </div>
+              <div class="prow"><span class="bx on"></span><span class="nm">Maria (você)</span><span class="val">100,00</span></div>
+              <div class="prow"><span class="bx on"></span><span class="nm">João</span><span class="val">100,00</span></div>
+              <div class="prow"><span class="bx on"></span><span class="nm">Pedro</span><span class="val">100,00</span></div>
+              <div class="prow"><span class="bx"></span><span class="nm" style="color:var(--ap-muted)">Ana</span><span class="val" style="color:var(--ap-muted)">—</span></div>
+              <div class="soma ok">Soma das partes R$ 300,00 · fecha com o lançamento ✓</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">A soma tem de fechar</b>
+            <span>O app <span class="destaque">não salva</span> uma divisão que não bate,
+            nem por um centavo.</span>
+            <span style="margin-top:8px">É a regra que garante que ninguém pague a mais nem
+            a menos que o valor real da compra.</span>
+          </div>
+          <div class="editor" style="flex:1; min-width:200px; max-width:300px">
+            <div style="font-size:11px; font-weight:700; margin-bottom:7px">Restaurante Fogo de Chão · R$ 300,00</div>
+            <div class="prow"><span class="bx on"></span><span class="nm">Maria (você)</span><span class="val">120,00</span></div>
+            <div class="prow"><span class="bx on"></span><span class="nm">João</span><span class="val">100,00</span></div>
+            <div class="prow"><span class="bx on"></span><span class="nm">Pedro</span><span class="val">100,00</span></div>
+            <div class="soma erro">Soma das partes R$ 320,00 · faltam R$ -20,00 para fechar</div>
+            <div style="margin-top:8px"><span class="btnp" style="opacity:.45">Salvar divisão</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <h4>Minhas contas (4)</h4>
+            <div class="sub">A divisão salva aparece embaixo da compra</div>
+            <div class="cardui">
+              <div class="lin meu">
+                <div>
+                  <div class="d">Restaurante Fogo de Chão</div>
+                  <div class="m">14/03 · <span class="pill gray">assumida</span></div>
+                  <div class="m">Conta dividida · total R$ 300,00</div>
+                  <ul class="partes"><li>Maria — R$ 100,00</li><li>João — R$ 100,00</li><li>Pedro — R$ 100,00</li></ul>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px">
+                  <div class="v">R$ 300,00</div>
+                  <span class="btns">Editar divisão</span>
+                  <span class="btns">Desfazer divisão</span>
+                </div>
+              </div>
+            </div>
+            <div class="cardui" style="margin-top:9px">
+              <div style="display:flex; justify-content:space-between; align-items:center">
+                <b style="font-size:11.5px">Seu total nesta fatura</b>
+                <span style="font-weight:700; font-size:15px">R$ 186,20</span>
+              </div>
+              <div class="m" style="color:var(--ap-muted); font-size:9.5px">só a sua parte de R$ 100,00 entrou aqui</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="cover">
+          <div class="bk">➗</div>
+          <h1>Cada um com a sua parte</h1>
+          <div class="rule"></div>
+          <p>O João e o Pedro veem a mesma conta na tela deles, com a fatia de cada um.
+             Vocês estavam na mesma mesa.</p>
+          <div class="next"><span class="chip">Próximo: aceitar e pagar</span></div>
+        </div>
+      </section>
+
+      <div class="replay" id="replay"><button id="replayBtn">↻ Assistir de novo</button></div>
+    </div>
+    <div class="cap"><p id="caption"></p></div>
+    <div class="ctrl">
+      <button class="btn" id="prev" aria-label="Anterior">⏮</button>
+      <button class="btn play" id="play" aria-label="Pausar">⏸</button>
+      <button class="btn" id="next" aria-label="Próximo">⏭</button>
+      <div class="segs" id="segs"></div>
+    </div>
+  </div>
+  <div class="foot">
+    Guia do JcardApp · avança sozinho — ⏸ pausa, ⏭ / ⏮ navegam (ou as setas do teclado).
+    <a href="index.html">← Voltar aos treinamentos</a>
+  </div>
+</div>
+<script>
+  window.CAPTIONS = [
+    ['Nem toda compra é de uma pessoa só. ', 'O jantar de sábado foi de três — e dá para dividir a conta no app.'],
+    ['A divisão sai da sua lista: ', 'assuma a compra primeiro e toque em "Dividir" na linha dela.'],
+    ['Marque quem participou ', 'e quanto cada um paga. "Dividir igualmente" preenche em partes iguais, e você ajusta o que quiser.'],
+    ['A soma das partes ', 'tem de dar exatamente o valor da compra. Enquanto não fechar, o botão de salvar fica travado — é assim que ninguém paga a mais.'],
+    ['Salvou: ', 'a compra passa a mostrar cada parte, e o seu total no alto da tela cai para só a sua fatia.'],
+    ['Os outros participantes ', 'veem essa mesma conta na tela deles. É a única coisa que vocês enxergam um do outro.']
+  ];
+  window.DURS = [6500, 8500, 10000, 10500, 9500, 8000];
+</script>
+<script src="player.js"></script>
+</body>
+</html>

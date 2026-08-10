@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JcardApp — Guia: Assumir uma conta</title>
+<link rel="stylesheet" href="player.css">
+<style>
+  .filtros{ display:flex; gap:6px; margin-bottom:9px; }
+  .filtros .f{ flex:1; border:1px solid var(--ap-border); background:var(--ap-surface);
+               border-radius:8px; padding:6px 9px; font-size:10px; color:var(--ap-muted); }
+  .filtros .f.busca{ flex:2; }
+  .filtros .f b{ color:var(--ap-ink); font-weight:600; }
+  .chks{ display:flex; gap:12px; font-size:9.5px; color:var(--ap-muted); margin-bottom:9px; }
+  .acoes{ display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="brand"><span class="bk">🙋</span> JcardApp <small>· Guia de uso</small></div>
+    <div class="step"><span id="stepNow">1</span> / <span id="stepTot">7</span> · Assumir uma conta</div>
+  </div>
+  <div class="player">
+    <div class="stage" id="stage">
+
+      <section class="scene on">
+        <div class="cover">
+          <div class="bk">🙋</div>
+          <h1>Assumir uma conta</h1>
+          <div class="rule"></div>
+          <p>Achar a sua compra no meio de centenas e dizer "foi minha".</p>
+          <div class="tagl">O coração do app</div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <h4>Faturas</h4>
+            <div class="sub">Abra a fatura para ver o que está sem dono.</div>
+            <div class="cardui">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start">
+                <div>
+                  <b style="font-size:12.5px">03/2026</b> <span class="pill b">em avaliação</span>
+                  <div class="m" style="color:var(--ap-muted); font-size:9.5px">Total R$ 4.812,90 · 514 lançamentos</div>
+                </div>
+                <span class="pill w">37 sem dono</span>
+              </div>
+              <div style="margin-top:9px"><span class="btnp glow">Minhas contas</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <h4>Fatura de 03/2026</h4>
+            <div class="sub">Marque o que foi você. O que ninguém assumir fica com o titular.</div>
+            <div class="cardui" style="margin-bottom:9px">
+              <div style="display:flex; justify-content:space-between; align-items:center">
+                <b style="font-size:11.5px">Seu total nesta fatura</b>
+                <span style="font-weight:700; font-size:15px">R$ 386,20</span>
+              </div>
+              <div class="m" style="color:var(--ap-muted); font-size:9.5px">R$ 372,10 em compras + R$ 14,10 de encargos rateados</div>
+            </div>
+            <div style="font-weight:700; font-size:12px; margin-bottom:6px">Sem dono (37)</div>
+            <div class="cardui">
+              <div class="grph">05/03/2026 <span>R$ 288,40</span></div>
+              <div class="lin"><div><div class="d">Posto Ipiranga</div><div class="m">05/03 · João · final 4412</div></div><div class="v">R$ 250,00</div></div>
+              <div class="lin"><div><div class="d">Padaria do Zé</div><div class="m">05/03 · Maria · final 8890</div></div><div class="v">R$ 38,40</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <h4>Sem dono (37)</h4>
+            <div class="sub">São 514 lançamentos: filtre em vez de rolar.</div>
+            <div class="filtros">
+              <div class="f busca glow">Procurar<br><b>farmácia</b></div>
+              <div class="f">De<br><b>01/03</b></div>
+              <div class="f">Até<br><b>31/03</b></div>
+              <div class="f">Agrupar<br><b>por dia</b></div>
+            </div>
+            <div class="chks"><span>☐ só parcelas</span><span>☑ só onde já comprei</span></div>
+            <div class="cardui">
+              <div class="grph">07/03/2026 <span>R$ 96,70</span></div>
+              <div class="lin">
+                <div><div class="d">Farmácia Pague Menos <span class="pill b">já foi sua</span></div>
+                     <div class="m">07/03 · Maria · final 8890</div></div>
+                <div class="v">R$ 96,70</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">"Foi minha"</b>
+            <span>Um toque e a compra sai do bolo comum e entra
+            <span class="destaque">na sua lista</span>.</span>
+            <span style="margin-top:8px">Errou? "Não foi minha" devolve a compra para o
+            bolo na hora, enquanto a fatura estiver em avaliação.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:200px; max-width:300px">
+            <div class="grph">07/03/2026 <span>R$ 96,70</span></div>
+            <div class="lin">
+              <div><div class="d">Farmácia Pague Menos</div><div class="m">07/03 · final 8890</div></div>
+              <div class="acoes">
+                <div class="v">R$ 96,70</div>
+                <span class="btnp glow">Foi minha</span>
+                <span style="font-size:9px; color:var(--ap-muted); text-decoration:underline">apelidar</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">Parcelamento gruda</b>
+            <span>Ao assumir a <span class="destaque">parcela 1</span>, todas as parcelas
+            seguintes já nascem no seu nome nas próximas faturas.</span>
+            <span style="margin-top:8px">Você marca uma vez; o app cuida dos outros nove meses.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:200px; max-width:300px">
+            <div class="grph">12/03/2026 <span>R$ 189,90</span></div>
+            <div class="lin">
+              <div>
+                <div class="d">Magazine Luiza</div>
+                <div class="m">12/03 · final 4412</div>
+                <div style="margin-top:4px"><span class="pill w">parcela 1/10</span></div>
+                <div class="m" style="margin-top:3px">Ao assumir, as 9 parcelas seguintes já entram no seu nome.</div>
+              </div>
+              <div class="acoes"><div class="v">R$ 189,90</div><span class="btnp glow">Foi minha</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <h4>Minhas contas (3)</h4>
+            <div class="sub">O que você já assumiu nesta fatura</div>
+            <div class="cardui">
+              <div class="lin meu"><div><div class="d">Farmácia Pague Menos</div><div class="m">07/03 · <span class="pill gray">assumida</span></div></div><div class="acoes"><div class="v">R$ 96,70</div><span class="btns">Não foi minha</span></div></div>
+              <div class="lin meu"><div><div class="d">Magazine Luiza</div><div class="m">12/03 · parcela 1/10 · <span class="pill gray">assumida</span></div></div><div class="acoes"><div class="v">R$ 189,90</div><span class="btns">Dividir</span></div></div>
+              <div class="lin meu"><div><div class="d">Padaria do Zé</div><div class="m">05/03 · <span class="pill gray">assumida</span></div></div><div class="acoes"><div class="v">R$ 38,40</div><span class="btns">Não foi minha</span></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="replay" id="replay"><button id="replayBtn">↻ Assistir de novo</button></div>
+    </div>
+    <div class="cap"><p id="caption"></p></div>
+    <div class="ctrl">
+      <button class="btn" id="prev" aria-label="Anterior">⏮</button>
+      <button class="btn play" id="play" aria-label="Pausar">⏸</button>
+      <button class="btn" id="next" aria-label="Próximo">⏭</button>
+      <div class="segs" id="segs"></div>
+    </div>
+  </div>
+  <div class="foot">
+    Guia do JcardApp · avança sozinho — ⏸ pausa, ⏭ / ⏮ navegam (ou as setas do teclado).
+    <a href="index.html">← Voltar aos treinamentos</a>
+  </div>
+</div>
+<script>
+  window.CAPTIONS = [
+    ['Assumir uma conta ', 'é dizer que aquela compra da fatura foi você quem fez.'],
+    ['Comece em "Faturas" ', 'e abra "Minhas contas" da fatura do mês. A etiqueta amarela mostra quantas compras ainda estão sem dono.'],
+    ['No alto fica o seu total ', 'e, abaixo, o bolo comum: tudo que ninguém assumiu ainda, agrupado por dia.'],
+    ['Não role a lista inteira. ', 'Busque pelo nome da loja, limite as datas ou marque "só onde já comprei" — a etiqueta "já foi sua" aponta lojas onde você comprou em outro mês.'],
+    ['Achou a sua? ', 'Toque em "Foi minha". Se marcar errado, "Não foi minha" devolve ao bolo comum na mesma hora.'],
+    ['Atenção às parcelas: ', 'assumir a parcela 1 de 10 põe as nove seguintes no seu nome automaticamente, mês a mês.'],
+    ['Tudo que você assumiu ', 'aparece em "Minhas contas", com o fundo azul. É a partir dessa lista que o seu valor é calculado.']
+  ];
+  window.DURS = [6000, 9000, 9000, 11000, 9000, 9500, 8500];
+</script>
+<script src="player.js"></script>
+</body>
+</html>

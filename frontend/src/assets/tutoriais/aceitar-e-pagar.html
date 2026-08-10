@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JcardApp — Guia: Aceitar e pagar</title>
+<link rel="stylesheet" href="player.css">
+<style>
+  .pixbox{ background:#e6f7f5; border:1px solid #bfe6e1; border-radius:9px; padding:9px 11px; }
+  .pixbox .k{ font-size:12px; font-weight:700; letter-spacing:.02em; word-break:break-all; }
+  .pixbox .t{ color:var(--ap-muted); font-size:9.5px; }
+  .fld{ margin-bottom:8px; }
+  .fld label{ display:block; font-size:9.5px; color:var(--ap-muted); margin-bottom:3px; }
+  .inp{ border:1px solid var(--ap-border); background:var(--ap-surface); border-radius:8px;
+        padding:7px 9px; font-size:10.5px; color:var(--ap-ink); }
+  .inp.file{ display:flex; align-items:center; gap:7px; color:var(--ap-muted); }
+  .inp.file .chip{ background:var(--ap-bg); border:1px solid var(--ap-border); border-radius:6px;
+                   padding:2px 7px; font-size:9.5px; color:var(--ap-ink); }
+  .trilha{ flex:1; display:flex; align-items:center; justify-content:center; gap:0; background:var(--ap-bg);
+           padding:clamp(16px,4vw,30px); flex-wrap:wrap; }
+  .et{ text-align:center; width:118px; }
+  .et .bola{ width:34px; height:34px; border-radius:50%; margin:0 auto 6px; display:grid; place-items:center;
+             background:var(--ap-surface); border:2px solid var(--ap-border); font-size:15px; }
+  .et.on .bola{ background:var(--ap-azul); border-color:var(--ap-azul); color:#fff; }
+  .et b{ display:block; font-size:11px; }
+  .et span{ display:block; color:var(--ap-muted); font-size:9.5px; line-height:1.4; margin-top:2px; }
+  .liga{ height:2px; width:26px; background:var(--ap-border); margin-top:-30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="brand"><span class="bk">💸</span> JcardApp <small>· Guia de uso</small></div>
+    <div class="step"><span id="stepNow">1</span> / <span id="stepTot">7</span> · Aceitar e pagar</div>
+  </div>
+  <div class="player">
+    <div class="stage" id="stage">
+
+      <section class="scene on">
+        <div class="cover">
+          <div class="bk">💸</div>
+          <h1>Aceitar e pagar</h1>
+          <div class="rule"></div>
+          <p>Conferir o valor, fazer o PIX e mandar o comprovante.</p>
+          <div class="tagl">O fim do mês</div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="trilha">
+          <div class="et on"><div class="bola">👀</div><b>Aberto</b><span>a conferir</span></div>
+          <div class="liga"></div>
+          <div class="et"><div class="bola">✍️</div><b>Aceito</b><span>você confirmou o valor</span></div>
+          <div class="liga"></div>
+          <div class="et"><div class="bola">📎</div><b>Informado</b><span>PIX feito, comprovante enviado</span></div>
+          <div class="liga"></div>
+          <div class="et"><div class="bola">✅</div><b>Confirmado</b><span>o admin recebeu</span></div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">Espere a conciliação</b>
+            <span>Enquanto houver compra sem dono, <span class="destaque">o seu valor ainda
+            muda</span> — os encargos são divididos entre quem usou o cartão.</span>
+            <span style="margin-top:8px">Por isso o aceite só abre quando o administrador
+            fecha as contas do mês.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:200px; max-width:300px">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <b style="font-size:11.5px">Seu total nesta fatura</b>
+              <span style="font-weight:700; font-size:15px">R$ 386,20</span>
+            </div>
+            <div class="m" style="color:var(--ap-muted); font-size:9.5px">R$ 372,10 em compras + R$ 14,10 de encargos rateados</div>
+            <div style="margin-top:9px"><span class="pill gray">a conferir</span></div>
+            <div class="m" style="color:var(--ap-muted); font-size:9.5px; margin-top:6px">
+              O aceite abre quando o administrador conciliar a fatura — só aí o valor para de mudar.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <h4>Fatura de 03/2026</h4>
+            <div class="sub">Fatura conciliada · o valor está fechado</div>
+            <div class="cardui">
+              <div style="display:flex; justify-content:space-between; align-items:center">
+                <b style="font-size:11.5px">Seu total nesta fatura</b>
+                <span style="font-weight:700; font-size:15px">R$ 386,20</span>
+              </div>
+              <div class="m" style="color:var(--ap-muted); font-size:9.5px">R$ 372,10 em compras + R$ 14,10 de encargos rateados</div>
+              <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center">
+                <span class="pill gray">a conferir</span>
+                <span class="btnp glow">Conferi e aceito o valor</span>
+              </div>
+            </div>
+            <div class="cardui" style="margin-top:9px">
+              <div style="font-weight:700; font-size:11px; margin-bottom:5px">Minhas contas (4)</div>
+              <div class="lin meu"><div><div class="d">Farmácia Pague Menos</div><div class="m">07/03</div></div><div class="v">R$ 96,70</div></div>
+              <div class="lin meu"><div><div class="d">Magazine Luiza</div><div class="m">12/03 · parcela 1/10</div></div><div class="v">R$ 189,90</div></div>
+              <div class="lin meu"><div><div class="d">Encargos rateados</div><div class="m">IOF, anuidade e juros divididos</div></div><div class="v">R$ 14,10</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <h4>Pagar</h4>
+            <div class="sub">R$ 386,20 · aceito em 02/04/2026</div>
+            <div class="pixbox">
+              <div class="t">Chave PIX (e-mail) · José Oliveira</div>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:3px">
+                <span class="k">jose.oliveira&#64;email.com</span>
+                <span class="btns">Copiar chave</span>
+              </div>
+            </div>
+            <div style="margin-top:10px">
+              <div class="fld"><label>Data do pagamento</label><div class="inp">02/04/2026</div></div>
+              <div class="fld"><label>Comprovante do PIX ou da transferência</label>
+                <div class="inp file glow"><span class="chip">📎 comprovante-pix.png</span> até 3 MB</div>
+              </div>
+              <span class="btnp">Declarar pagamento</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">O comprovante é obrigatório</b>
+            <span>Ele <span class="destaque">é a prova</span> do acerto: é olhando para ele
+            que o administrador confirma o recebimento.</span>
+            <span style="margin-top:8px">Print do app do banco ou o PDF serve. Sem ele o app
+            não deixa declarar o pagamento.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:200px; max-width:280px">
+            <div style="font-weight:700; font-size:11.5px">Pagamento declarado</div>
+            <div class="m" style="color:var(--ap-muted); font-size:10px; margin-top:4px">
+              Declarado em 02/04/2026 com comprovante anexado. Aguardando a confirmação do administrador.
+            </div>
+            <div style="margin-top:8px"><span class="pill w">aguardando confirmação</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a><span class="ic">🧾</span> Faturas</a>
+            <a class="act"><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <h4>Meus acertos</h4>
+            <div class="sub">O que você deve, por fatura.</div>
+            <div class="cardui">
+              <div class="lin"><div><div class="d">03/2026</div><div class="m">pago em 05/04/2026</div></div><div style="display:flex; align-items:center; gap:9px"><span class="pill g">pago</span><div class="v">R$ 386,20</div></div></div>
+              <div class="lin"><div><div class="d">02/2026</div><div class="m">confirmado em 06/03/2026</div></div><div style="display:flex; align-items:center; gap:9px"><span class="pill g">pago</span><div class="v">R$ 244,80</div></div></div>
+              <div class="lin"><div><div class="d">01/2026</div><div class="m">confirmado em 04/02/2026</div></div><div style="display:flex; align-items:center; gap:9px"><span class="pill g">pago</span><div class="v">R$ 512,35</div></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="replay" id="replay"><button id="replayBtn">↻ Assistir de novo</button></div>
+    </div>
+    <div class="cap"><p id="caption"></p></div>
+    <div class="ctrl">
+      <button class="btn" id="prev" aria-label="Anterior">⏮</button>
+      <button class="btn play" id="play" aria-label="Pausar">⏸</button>
+      <button class="btn" id="next" aria-label="Próximo">⏭</button>
+      <div class="segs" id="segs"></div>
+    </div>
+  </div>
+  <div class="foot">
+    Guia do JcardApp · avança sozinho — ⏸ pausa, ⏭ / ⏮ navegam (ou as setas do teclado).
+    <a href="index.html">← Voltar aos treinamentos</a>
+  </div>
+</div>
+<script>
+  window.CAPTIONS = [
+    ['No fim do mês ', 'você confere o seu valor, faz o PIX e manda o comprovante. São quatro etapas.'],
+    ['O caminho é sempre esse: ', 'aberto, aceito, informado e confirmado. Nenhuma etapa pula a anterior.'],
+    ['Antes da conciliação ', 'o seu valor ainda pode mudar: os encargos do cartão são divididos entre quem usou, e isso muda a cada compra assumida.'],
+    ['Fatura conciliada, ', 'o botão "Conferi e aceito o valor" aparece. Confira a lista das suas contas antes de tocar nele.'],
+    ['Aceito, ', 'o app mostra a chave PIX do titular. Copie, pague no banco e volte para declarar o pagamento com a data.'],
+    ['O comprovante é obrigatório: ', 'é ele que o administrador olha para confirmar. Sem anexo, o app não aceita a declaração.'],
+    ['Confirmado o recebimento, ', 'o acerto vira "pago" em "Meus acertos" — o seu histórico de todas as faturas.']
+  ];
+  window.DURS = [6500, 8500, 10000, 9500, 10000, 9500, 8000];
+</script>
+<script src="player.js"></script>
+</body>
+</html>
