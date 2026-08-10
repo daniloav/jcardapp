@@ -15,6 +15,7 @@ import br.com.jcard.model.CompromissoParcelado;
 import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
+import br.com.jcard.model.PagamentoAcerto;
 import br.com.jcard.model.OrigemAtribuicao;
 import br.com.jcard.model.Reivindicacao;
 import br.com.jcard.model.StatusAcerto;
@@ -145,7 +146,7 @@ class FluxoDeIndicacaoTest {
         reivindicacoes.reivindicar(l.id, joao, null);
         conciliacao.conciliar(f.id, titular);
         acertos.aceitar(f.id, joao);
-        acertos.informarPagamento(f.id, joao, LocalDate.now(), null,
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
                 new byte[] { 1, 2 }, "pix.png", "image/png");
 
         conciliacao.reabrirAvaliacao(f.id, titular, null);
@@ -153,7 +154,7 @@ class FluxoDeIndicacaoTest {
         Acerto a = acerto(f, joao);
         assertEquals(StatusAcerto.INFORMADO, a.status,
                 "apagar o pagamento declarado seria negar que o dinheiro saiu");
-        assertNotNull(ComprovantePagamento.doAcerto(a.id), "o comprovante é a prova do acerto");
+        assertNotNull(comprovanteDo(a), "o comprovante é a prova do acerto");
     }
 
     @Test
@@ -165,9 +166,9 @@ class FluxoDeIndicacaoTest {
         reivindicacoes.reivindicar(l.id, joao, null);
         conciliacao.conciliar(f.id, titular);
         acertos.aceitar(f.id, joao);
-        acertos.informarPagamento(f.id, joao, LocalDate.now(), null,
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
                 new byte[] { 1 }, "pix.png", "image/png");
-        acertos.confirmarPagamento(acerto(f, joao).id, titular);
+        acertos.confirmarPagamento(primeiroPagamento(acerto(f, joao)), titular);
 
         WebApplicationException e = assertThrows(WebApplicationException.class,
                 () -> conciliacao.reabrirAvaliacao(f.id, titular, null));
@@ -184,9 +185,9 @@ class FluxoDeIndicacaoTest {
         reivindicacoes.reivindicar(l.id, joao, null);
         conciliacao.conciliar(f.id, titular);
         acertos.aceitar(f.id, joao);
-        acertos.informarPagamento(f.id, joao, LocalDate.now(), null,
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
                 new byte[] { 1 }, "pix.png", "image/png");
-        acertos.confirmarPagamento(acerto(f, joao).id, titular);
+        acertos.confirmarPagamento(primeiroPagamento(acerto(f, joao)), titular);
         conciliacao.fechar(f.id, titular);
 
         WebApplicationException e = assertThrows(WebApplicationException.class,
@@ -540,4 +541,18 @@ class FluxoDeIndicacaoTest {
         assertNotNull(a, "esperava acerto de " + u.nome);
         return a;
     }
+
+    /** O id da primeira transferência do acerto — é ela que o admin confirma. */
+    @Transactional
+    Long primeiroPagamento(Acerto a) {
+        PagamentoAcerto.getEntityManager().clear();
+        return PagamentoAcerto.doAcerto(a.id).get(0).id;
+    }
+
+    @Transactional
+    ComprovantePagamento comprovanteDo(Acerto a) {
+        ComprovantePagamento.getEntityManager().clear();
+        return ComprovantePagamento.doPagamento(PagamentoAcerto.doAcerto(a.id).get(0).id);
+    }
+
 }

@@ -143,12 +143,18 @@ export class ApiService {
     return this.http.post<Acerto>(`/api/faturas/${faturaId}/aceite`, {});
   }
 
-  /** O comprovante é obrigatório — por isso multipart e não JSON. */
-  informarPagamento(faturaId: number, comprovante: File,
+  /**
+   * Declara UMA transferência. O comprovante é obrigatório — por isso multipart
+   * e não JSON —, e o valor em branco vale "paguei tudo que faltava".
+   */
+  informarPagamento(faturaId: number, comprovante: File, valor: string,
                     pagoEm: string, observacao?: string): Observable<Acerto> {
     const form = new FormData();
     form.append('comprovante', comprovante);
     form.append('pagoEm', pagoEm);
+    if (valor && valor.trim()) {
+      form.append('valor', valor.trim());
+    }
     if (observacao) {
       form.append('observacao', observacao);
     }
@@ -156,16 +162,17 @@ export class ApiService {
   }
 
   /**
-   * Baixa o comprovante como blob em vez de apontar um `<a href>` para a URL:
-   * o endpoint exige o JWT, que só o interceptor coloca — um link direto
-   * voltaria 401.
+   * Baixa o comprovante de uma transferência como blob em vez de apontar um
+   * `<a href>` para a URL: o endpoint exige o JWT, que só o interceptor coloca —
+   * um link direto voltaria 401.
    */
-  comprovante(acertoId: number): Observable<Blob> {
-    return this.http.get(`/api/acertos/${acertoId}/comprovante`, { responseType: 'blob' });
+  comprovante(pagamentoId: number): Observable<Blob> {
+    return this.http.get(`/api/pagamentos/${pagamentoId}/comprovante`, { responseType: 'blob' });
   }
 
-  confirmarPagamento(acertoId: number): Observable<Acerto> {
-    return this.http.post<Acerto>(`/api/acertos/${acertoId}/confirmar`, {});
+  /** O admin dá por recebida uma transferência — uma de cada vez. */
+  confirmarPagamento(pagamentoId: number): Observable<Acerto> {
+    return this.http.post<Acerto>(`/api/pagamentos/${pagamentoId}/confirmar`, {});
   }
 
   reabrirAcerto(acertoId: number): Observable<Acerto> {

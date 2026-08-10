@@ -93,6 +93,18 @@ export interface Lancamento {
   jaFoiSeu: boolean;
 }
 
+/** Uma transferência declarada, com o comprovante dela. */
+export interface Pagamento {
+  id: number;
+  valor: number;
+  pagoEm: string;
+  observacao: string | null;
+  informadoEm: string;
+  /** Preenchido quando o admin deu por recebida. */
+  confirmadoEm: string | null;
+  temComprovante: boolean;
+}
+
 export interface Acerto {
   id: number;
   faturaId: number;
@@ -106,7 +118,11 @@ export interface Acerto {
   informadoEm: string | null;
   confirmadoEm: string | null;
   observacao: string | null;
-  temComprovante: boolean;
+  /** Soma das transferências declaradas, confirmadas ou não. */
+  valorPago: number;
+  /** `valorDevido - valorPago`: o que ainda falta. */
+  saldo: number;
+  pagamentos: Pagamento[];
 }
 
 /** A chave para onde o acerto é pago. Vem da configuração do backend. */

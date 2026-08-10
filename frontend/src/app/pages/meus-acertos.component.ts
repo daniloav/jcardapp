@@ -30,7 +30,15 @@ import { Acerto } from '../core/models';
             @for (a of acertos(); track a.id) {
               <tr>
                 <td>{{ a.competencia | date: 'MM/yyyy' }}</td>
-                <td class="num">{{ a.valorDevido | currency: 'BRL' }}</td>
+                <td class="num">
+                  {{ a.valorDevido | currency: 'BRL' }}
+                  @if (a.saldo > 0 && a.valorPago !== 0) {
+                    <div class="meta">
+                      pago {{ a.valorPago | currency: 'BRL' }} ·
+                      <strong class="falta">faltam {{ a.saldo | currency: 'BRL' }}</strong>
+                    </div>
+                  }
+                </td>
                 <td>
                   <span class="tag" [class.ok]="a.status === 'CONFIRMADO'"
                         [class.alerta]="a.status === 'INFORMADO'">

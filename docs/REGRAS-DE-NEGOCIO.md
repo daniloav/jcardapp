@@ -365,13 +365,13 @@ ABERTO ──aceite──► ACEITO ──pagamento + comprovante──► INFOR
   mudar não significa nada. O passo existe para a discussão sobre o valor
   acontecer **antes** de o dinheiro sair.
 - Se o valor mudar depois (o admin arbitrou, alguém dividiu uma conta), o aceite
-  é **anulado** e a pessoa confere de novo. Quem já declarou o pagamento fica como
-  está: o dinheiro saiu, e a diferença é assunto do admin — não motivo para apagar
-  o comprovante.
+  é **anulado** e a pessoa confere de novo — inclusive quem já declarou um
+  pagamento, que aceita o número novo antes de mandar a diferença. O que já foi
+  pago fica: o dinheiro saiu, e apagar o comprovante seria negar isso.
 - **Pagamento** — exige o **comprovante** do PIX ou da transferência (imagem ou
   PDF, até 3 MB). Sem ele não existe registro de que o dinheiro saiu e a
-  confirmação viraria palavra contra palavra. Reenviar substitui, para quem mandou
-  o print errado.
+  confirmação viraria palavra contra palavra. Reenviar substitui **o daquela
+  transferência**, para quem mandou o print errado.
 - A chave PIX vem da configuração (`jcard.pix.*`), não do código: é dado pessoal
   do titular e muda de dono sem recompilar.
 - **Confirmação** é sempre do admin — o app não tem como saber se o PIX caiu.
@@ -380,9 +380,44 @@ ABERTO ──aceite──► ACEITO ──pagamento + comprovante──► INFOR
 - O comprovante só é visível para o dono do acerto e para o admin: é documento
   bancário de outra pessoa.
 
+### 5.1 Um acerto é quitado por N transferências
+
+O app registrava quanto a pessoa **deve** e nunca quanto ela **pagou**. O caso
+que quebra isso é banal: ela paga R$ 100, o total dela sobe para R$ 130 no
+fechamento (o divisor do encargo mudou, o admin atribuiu mais um lançamento) e
+ela manda a diferença. Com um comprovante por acerto, o segundo print apagava o
+primeiro e a prova dos R$ 100 sumia.
+
+Cada transferência é uma linha com **valor, data e comprovante próprios**:
+
+- **Saldo** = `valorDevido - Σ pagamentos`. Derivado, nunca gravado — o valor
+  devido muda a cada recálculo do rateio, e um saldo persistido divergiria dele
+  no primeiro recálculo (mesma razão do encargo rateado, §1.4).
+- **O valor em branco vale "paguei o que faltava"** — o caso comum. Obrigar a
+  digitar de novo um número que o app acabou de mostrar só cria divergência de
+  centavo.
+- **O admin confirma transferência por transferência**, porque é assim que ele
+  confere: uma entrada de cada vez, no extrato.
+- O acerto só vira `CONFIRMADO` quando **todas** estão confirmadas **e** o saldo
+  zerou. Confirmar o acerto com saldo em aberto marcaria como pago quem ainda
+  deve; dar por quitado sem conferir daria por recebido o que ninguém viu cair.
+- **Reabrir o acerto mantém os pagamentos e os comprovantes** — o dinheiro saiu.
+  O acerto volta para `INFORMADO` (há transferência declarada) e o aceite cai.
+- Fechar a fatura continua exigindo todos os acertos `CONFIRMADO`, o que agora
+  significa, por construção, saldo zero para todo mundo.
+
+Migration `V4__pagamento_parcial.sql`: cada comprovante existente virou um
+pagamento do valor devido no momento, preservando a confirmação do admin.
+
+`PagamentoAcerto` · `AcertoService.informarPagamento/confirmarPagamento` ·
+`POST /api/faturas/{id}/pagamento` (multipart, campo `valor` opcional) ·
+`POST /api/pagamentos/{id}/confirmar` · `GET /api/pagamentos/{id}/comprovante`
+
 `AcertoService` · `PixConfig` · `ConciliacaoService.recalcularAcertos` · testes
 `cicloDePagamento`, `aceiteExigeFaturaConciliada`, `pagamentoExigeAceite`,
-`comprovanteEObrigatorio`, `comprovanteEPrivado`
+`comprovanteEObrigatorio`, `comprovanteEPrivado`, `pagamentoParcialDeixaSaldo`,
+`pagamentoComplementarQuitaODepois`, `cadaPagamentoTemSeuComprovante`,
+`reabrirMantemOsPagamentos`, `pagamentoDeSinalContrarioERecusado`
 
 ## 6. Pessoas
 

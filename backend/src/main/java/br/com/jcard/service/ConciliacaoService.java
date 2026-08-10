@@ -100,12 +100,16 @@ public class ConciliacaoService {
                 a.valorDevido = e.getValue();
                 // Aceitar é concordar com UM valor. Se ele mudou (o admin arbitrou,
                 // alguém dividiu uma conta), o aceite anterior não vale mais e a
-                // pessoa precisa conferir de novo antes de pagar. Quem já declarou
-                // o pagamento fica como está: o dinheiro saiu, e a diferença é
-                // assunto do admin, não motivo para apagar o comprovante.
-                if (mudou && a.status == StatusAcerto.ACEITO) {
-                    a.status = StatusAcerto.ABERTO;
+                // pessoa precisa conferir de novo antes de pagar — inclusive quem
+                // já declarou uma transferência, que vai ter de aceitar o número
+                // novo antes de mandar a diferença. O que ela já pagou fica: o
+                // dinheiro saiu, e apagar o comprovante seria negar isso.
+                if (mudou && (a.status == StatusAcerto.ACEITO
+                              || a.status == StatusAcerto.INFORMADO)) {
                     a.aceitoEm = null;
+                    if (a.status == StatusAcerto.ACEITO) {
+                        a.status = StatusAcerto.ABERTO;
+                    }
                 }
             }
             a.persist();

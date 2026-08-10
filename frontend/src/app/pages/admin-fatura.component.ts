@@ -6,7 +6,7 @@ import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ToastService } from '../core/toast.service';
 import {
-  Acerto, DetalheDoUtilizador, DetalheFatura, Lancamento, Usuario,
+  Acerto, DetalheDoUtilizador, DetalheFatura, Lancamento, Pagamento, Usuario,
   descricaoSemParcela, nomeDoLancamento,
 } from '../core/models';
 
@@ -96,36 +96,56 @@ import {
               @for (a of d.acertos; track a.id) {
                 <tr>
                   <td>{{ a.usuarioNome }}</td>
-                  <td class="num">{{ a.valorDevido | currency: 'BRL' }}</td>
+                  <td class="num">
+                    {{ a.valorDevido | currency: 'BRL' }}
+                    @if (a.valorPago !== 0) {
+                      <div class="meta">
+                        pago {{ a.valorPago | currency: 'BRL' }}
+                        @if (a.saldo > 0) {
+                          · <strong class="falta">faltam {{ a.saldo | currency: 'BRL' }}</strong>
+                        }
+                      </div>
+                    }
+                  </td>
                   <td>
                     <span class="tag" [class.ok]="a.status === 'CONFIRMADO'"
                           [class.alerta]="a.status === 'INFORMADO' || a.status === 'ACEITO'">
                       {{ rotuloAcerto(a.status) }}
                     </span>
-                    @if (a.pagoEm) {
-                      <div class="meta">pago em {{ a.pagoEm | date: 'dd/MM/yyyy' }}</div>
-                    }
                     @if (a.observacao) {
                       <div class="meta">{{ a.observacao }}</div>
+                    }
+
+                    <!-- Uma transferência por linha: o admin confere uma entrada
+                         de cada vez no extrato, e é assim que ele dá o "recebi". -->
+                    @if (a.pagamentos.length > 0) {
+                      <ul class="pagamentos">
+                        @for (p of a.pagamentos; track p.id) {
+                          <li>
+                            <span>{{ p.pagoEm | date: 'dd/MM' }}</span>
+                            <strong>{{ p.valor | currency: 'BRL' }}</strong>
+                            @if (p.temComprovante) {
+                              <button type="button" class="btn-texto"
+                                      (click)="verComprovante(p)">comprovante</button>
+                            }
+                            @if (p.confirmadoEm) {
+                              <span class="tag ok">recebido</span>
+                            } @else {
+                              <button type="button" class="btn-secundario"
+                                      (click)="confirmar(p, a)">Recebi</button>
+                            }
+                          </li>
+                        }
+                      </ul>
+                    } @else {
+                      <div class="meta">a pessoa ainda não declarou nenhum pagamento</div>
                     }
                   </td>
                   <td>
                     <button type="button" class="btn-texto" (click)="abrirDetalhe(a.usuarioId)">
                       Conferir conta
                     </button>
-                    @if (a.temComprovante) {
-                      <button type="button" class="btn-texto" (click)="verComprovante(a)">
-                        Ver comprovante
-                      </button>
-                    }
-                    @if (a.status !== 'CONFIRMADO') {
-                      <button type="button" (click)="confirmar(a)">Recebi</button>
-                      @if (!a.temComprovante) {
-                        <div class="meta">
-                          sem comprovante — a pessoa ainda não declarou o pagamento
-                        </div>
-                      }
-                    } @else {
+                    @if (a.status === 'CONFIRMADO') {
                       <button type="button" class="btn-secundario" (click)="reabrir(a)">
                         Reabrir
                       </button>
@@ -668,11 +688,11 @@ export class AdminFaturaComponent {
   }
 
   /**
-   * Abre o comprovante numa aba nova. Vai como blob porque o endpoint exige o
-   * JWT — um link direto voltaria 401.
+   * Abre o comprovante de uma transferência numa aba nova. Vai como blob porque
+   * o endpoint exige o JWT — um link direto voltaria 401.
    */
-  verComprovante(a: Acerto): void {
-    this.api.comprovante(a.id).subscribe({
+  verComprovante(p: Pagamento): void {
+    this.api.comprovante(p.id).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);
         window.open(url, '_blank');
@@ -817,10 +837,24 @@ export class AdminFaturaComponent {
     });
   }
 
-  confirmar(a: Acerto): void {
-    this.api.confirmarPagamento(a.id).subscribe({
-      next: () => { this.toast.ok(`Pagamento de ${a.usuarioNome} confirmado.`); this.carregar(); },
+  /**
+   * Dá por recebida UMA transferência. O acerto só fecha quando todas estiverem
+   * confirmadas e o saldo zerar — por isso o aviso quando ainda falta.
+   */
+  confirmar(p: Pagamento, a: Acerto): void {
+    this.api.confirmarPagamento(p.id).subscribe({
+      next: (atualizado) => {
+        this.toast.ok(atualizado.saldo > 0
+          ? `Transferência de ${a.usuarioNome} confirmada. Ainda faltam `
+            + `${this.emReais(atualizado.saldo)}.`
+          : `Pagamento de ${a.usuarioNome} confirmado.`);
+        this.carregar();
+      },
     });
+  }
+
+  private emReais(valor: number): string {
+    return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
 
   reabrir(a: Acerto): void {

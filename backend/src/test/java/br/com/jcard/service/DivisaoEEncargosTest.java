@@ -14,6 +14,7 @@ import br.com.jcard.model.CompromissoParcelado;
 import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
+import br.com.jcard.model.PagamentoAcerto;
 import br.com.jcard.model.Reivindicacao;
 import br.com.jcard.model.StatusAcerto;
 import br.com.jcard.model.StatusFatura;
@@ -392,7 +393,7 @@ class DivisaoEEncargosTest {
         Fatura f = faturaConciliadaComJoao();
 
         WebApplicationException e = assertThrows(WebApplicationException.class,
-                () -> acertos.informarPagamento(f.id, joao, LocalDate.now(), null,
+                () -> acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
                         new byte[] { 1, 2, 3 }, "pix.png", "image/png"));
         assertEquals(409, e.getResponse().getStatus());
     }
@@ -404,7 +405,7 @@ class DivisaoEEncargosTest {
         acertos.aceitar(f.id, joao);
 
         WebApplicationException e = assertThrows(WebApplicationException.class,
-                () -> acertos.informarPagamento(f.id, joao, LocalDate.now(), null,
+                () -> acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
                         new byte[0], "vazio.png", "image/png"));
         assertEquals(400, e.getResponse().getStatus());
         assertEquals(StatusAcerto.ACEITO, acerto(f, joao).status,
@@ -418,7 +419,7 @@ class DivisaoEEncargosTest {
         acertos.aceitar(f.id, joao);
 
         WebApplicationException e = assertThrows(WebApplicationException.class,
-                () -> acertos.informarPagamento(f.id, joao, LocalDate.now(), null,
+                () -> acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
                         new byte[] { 1 }, "planilha.xlsx", "application/vnd.ms-excel"));
         assertEquals(415, e.getResponse().getStatus());
     }
@@ -431,16 +432,130 @@ class DivisaoEEncargosTest {
         acertos.aceitar(f.id, joao);
         assertEquals(StatusAcerto.ACEITO, acerto(f, joao).status);
 
-        acertos.informarPagamento(f.id, joao, LocalDate.parse("2026-08-20"), "pix feito",
+        acertos.informarPagamento(f.id, joao, null, LocalDate.parse("2026-08-20"), "pix feito",
                 new byte[] { 8, 9, 10 }, "comprovante.png", "image/png");
 
         Acerto a = acerto(f, joao);
         assertEquals(StatusAcerto.INFORMADO, a.status);
         assertEquals(LocalDate.parse("2026-08-20"), a.pagoEm);
-        assertNotNull(ComprovantePagamento.doAcerto(a.id));
+        assertNotNull(comprovanteDo(a));
 
-        acertos.confirmarPagamento(a.id, titular);
+        acertos.confirmarPagamento(primeiroPagamento(a), titular);
         assertEquals(StatusAcerto.CONFIRMADO, acerto(f, joao).status);
+    }
+
+    // ============================================== quitação em parcelas ===
+
+    @Test
+    @DisplayName("pagamento parcial deixa saldo em aberto e o acerto não fecha")
+    void pagamentoParcialDeixaSaldo() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.aceitar(f.id, joao);
+
+        acertos.informarPagamento(f.id, joao, new BigDecimal("60.00"), LocalDate.now(),
+                "primeiro pix", new byte[] { 1 }, "pix1.png", "image/png");
+
+        Acerto a = acerto(f, joao);
+        assertEquals(StatusAcerto.INFORMADO, a.status);
+        assertEquals(0, new BigDecimal("40.00").compareTo(saldoDe(a)),
+                "pagou 60 de 100: faltam 40");
+
+        // Confirmar a transferência não quita o acerto — ainda falta dinheiro.
+        acertos.confirmarPagamento(primeiroPagamento(a), titular);
+        assertEquals(StatusAcerto.INFORMADO, acerto(f, joao).status,
+                "dar por pago quem ainda deve 40 esconderia a dívida");
+    }
+
+    /**
+     * O caso que motivou a quitação em parcelas: a pessoa paga, o valor dela
+     * sobe no fechamento e ela manda a diferença. As duas provas ficam.
+     */
+    @Test
+    @DisplayName("valor sobe depois do primeiro pagamento: a diferença vira saldo e o complemento quita")
+    void pagamentoComplementarQuitaODepois() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.aceitar(f.id, joao);
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), "pix cheio",
+                new byte[] { 1 }, "pix1.png", "image/png");
+        assertEquals(0, BigDecimal.ZERO.compareTo(saldoDe(acerto(f, joao))));
+
+        // O admin reabre, atribui mais um lançamento e o total do João sobe.
+        conciliacao.reabrirAvaliacao(f.id, titular, "faltou a farmácia");
+        Lancamento farmacia = criarLancamento(f, "FARMACIA", "30.00", TipoLancamento.COMPRA);
+        ajustarTotal(f, "130.00");
+        conciliacao.validarLeitura(f.id);
+        reivindicacoes.reivindicar(farmacia.id, joao, null);
+        conciliacao.conciliar(f.id, titular);
+
+        Acerto a = acerto(f, joao);
+        assertEquals(0, new BigDecimal("130.00").compareTo(a.valorDevido));
+        assertEquals(0, new BigDecimal("30.00").compareTo(saldoDe(a)),
+                "os 100 que já entraram continuam contando");
+
+        acertos.aceitar(f.id, joao);
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), "complemento",
+                new byte[] { 2 }, "pix2.png", "image/png");
+
+        assertEquals(2, PagamentoAcerto.doAcerto(a.id).size(),
+                "o segundo comprovante não pode apagar a prova do primeiro");
+        assertEquals(0, BigDecimal.ZERO.compareTo(saldoDe(acerto(f, joao))));
+
+        for (Long p : idsDosPagamentos(a)) {
+            acertos.confirmarPagamento(p, titular);
+        }
+        assertEquals(StatusAcerto.CONFIRMADO, acerto(f, joao).status,
+                "com tudo conferido e saldo zero, o acerto fecha");
+    }
+
+    @Test
+    @DisplayName("cada transferência tem o próprio comprovante")
+    void cadaPagamentoTemSeuComprovante() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.aceitar(f.id, joao);
+        acertos.informarPagamento(f.id, joao, new BigDecimal("60.00"), LocalDate.now(), null,
+                new byte[] { 1 }, "pix1.png", "image/png");
+        acertos.informarPagamento(f.id, joao, new BigDecimal("40.00"), LocalDate.now(), null,
+                new byte[] { 2, 2 }, "pix2.png", "image/png");
+
+        List<Long> ids = idsDosPagamentos(acerto(f, joao));
+        assertEquals(2, ids.size());
+        assertNotNull(acertos.comprovante(ids.get(0), titular, true));
+        assertNotNull(acertos.comprovante(ids.get(1), titular, true));
+        assertEquals(2, comprovantesDo(acerto(f, joao)),
+                "duas transferências, duas provas");
+    }
+
+    @Test
+    @DisplayName("reabrir o acerto mantém os pagamentos: o dinheiro saiu")
+    void reabrirMantemOsPagamentos() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.aceitar(f.id, joao);
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
+                new byte[] { 1 }, "pix.png", "image/png");
+        Acerto a = acerto(f, joao);
+        acertos.confirmarPagamento(primeiroPagamento(a), titular);
+        assertEquals(StatusAcerto.CONFIRMADO, acerto(f, joao).status);
+
+        acertos.reabrir(a.id, titular);
+
+        Acerto reaberto = acerto(f, joao);
+        assertEquals(StatusAcerto.INFORMADO, reaberto.status,
+                "há transferência declarada: o acerto volta para conferência, não para o zero");
+        assertNull(reaberto.confirmadoEm);
+        assertEquals(1, PagamentoAcerto.doAcerto(a.id).size());
+        assertNotNull(comprovanteDo(reaberto), "apagar a prova seria negar que o dinheiro saiu");
+    }
+
+    @Test
+    @DisplayName("pagamento com sinal contrário ao saldo é recusado")
+    void pagamentoDeSinalContrarioERecusado() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.aceitar(f.id, joao);
+
+        WebApplicationException e = assertThrows(WebApplicationException.class,
+                () -> acertos.informarPagamento(f.id, joao, new BigDecimal("-60.00"),
+                        LocalDate.now(), null, new byte[] { 1 }, "pix.png", "image/png"));
+        assertEquals(400, e.getResponse().getStatus());
     }
 
     @Test
@@ -448,14 +563,14 @@ class DivisaoEEncargosTest {
     void comprovanteEPrivado() {
         Fatura f = faturaConciliadaComJoao();
         acertos.aceitar(f.id, joao);
-        acertos.informarPagamento(f.id, joao, LocalDate.now(), null,
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
                 new byte[] { 1 }, "pix.png", "image/png");
-        Long acertoId = acerto(f, joao).id;
+        Long pagamentoId = primeiroPagamento(acerto(f, joao));
 
         WebApplicationException e = assertThrows(WebApplicationException.class,
-                () -> acertos.comprovante(acertoId, maria, false));
+                () -> acertos.comprovante(pagamentoId, maria, false));
         assertEquals(403, e.getResponse().getStatus());
-        assertNotNull(acertos.comprovante(acertoId, titular, true),
+        assertNotNull(acertos.comprovante(pagamentoId, titular, true),
                 "o admin precisa ver para poder confirmar");
     }
 
@@ -485,9 +600,9 @@ class DivisaoEEncargosTest {
     void faturaFechadaNaoEExcluida() {
         Fatura f = faturaConciliadaComJoao();
         acertos.aceitar(f.id, joao);
-        acertos.informarPagamento(f.id, joao, LocalDate.now(), null,
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
                 new byte[] { 1 }, "pix.png", "image/png");
-        acertos.confirmarPagamento(acerto(f, joao).id, titular);
+        acertos.confirmarPagamento(primeiroPagamento(acerto(f, joao)), titular);
         conciliacao.fechar(f.id, titular);
 
         WebApplicationException e = assertThrows(WebApplicationException.class,
@@ -589,4 +704,46 @@ class DivisaoEEncargosTest {
         assertNotNull(a, "esperava acerto de " + u.nome);
         return a;
     }
+
+    /** O total impresso muda quando a fatura ganha lançamento no teste. */
+    @Transactional
+    void ajustarTotal(Fatura f, String total) {
+        Fatura fresca = Fatura.findById(f.id);
+        fresca.valorTotal = new BigDecimal(total);
+        fresca.persist();
+    }
+
+    @Transactional
+    BigDecimal saldoDe(Acerto a) {
+        Acerto.getEntityManager().clear();
+        return acertos.saldo(Acerto.findById(a.id));
+    }
+
+    @Transactional
+    List<Long> idsDosPagamentos(Acerto a) {
+        PagamentoAcerto.getEntityManager().clear();
+        return PagamentoAcerto.doAcerto(a.id).stream().map(p -> p.id).toList();
+    }
+
+    @Transactional
+    long comprovantesDo(Acerto a) {
+        ComprovantePagamento.getEntityManager().clear();
+        return PagamentoAcerto.doAcerto(a.id).stream()
+                .filter(p -> ComprovantePagamento.doPagamento(p.id) != null)
+                .count();
+    }
+
+    /** O id da primeira transferência do acerto — é ela que o admin confirma. */
+    @Transactional
+    Long primeiroPagamento(Acerto a) {
+        PagamentoAcerto.getEntityManager().clear();
+        return PagamentoAcerto.doAcerto(a.id).get(0).id;
+    }
+
+    @Transactional
+    ComprovantePagamento comprovanteDo(Acerto a) {
+        ComprovantePagamento.getEntityManager().clear();
+        return ComprovantePagamento.doPagamento(PagamentoAcerto.doAcerto(a.id).get(0).id);
+    }
+
 }

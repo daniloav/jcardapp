@@ -253,18 +253,29 @@ public class NotificacaoService {
                 "JcardApp · seu acerto de " + a.fatura.competencia.format(MES), corpo));
     }
 
-    /** Avisa o admin de que alguém pagou e mandou o comprovante para conferir. */
-    public void pagamentoInformado(Acerto a) {
+    /**
+     * Avisa o admin de que alguém pagou e mandou o comprovante para conferir.
+     *
+     * <p>Diz <b>quanto entrou</b> e <b>quanto falta</b>, não o valor devido: com
+     * pagamento parcial, "declarou o pagamento de R$ 130" quando entraram R$ 30
+     * faria o admin dar por recebido o que não recebeu.
+     */
+    public void pagamentoInformado(Acerto a, BigDecimal pago, BigDecimal saldo) {
         if (!habilitado) {
             return;
         }
+        String falta = saldo.signum() > 0
+                ? "<p>Ainda faltam <strong>R$ %s</strong> dos R$ %s devidos.</p>"
+                        .formatted(valor(saldo), valor(a.valorDevido))
+                : "<p>Com isso o acerto de R$ %s fica quitado.</p>".formatted(valor(a.valorDevido));
         String corpo = """
-                <p><strong>%s</strong> declarou o pagamento de <strong>R$ %s</strong>
+                <p><strong>%s</strong> declarou uma transferência de <strong>R$ %s</strong>
                 da fatura de <strong>%s</strong>.</p>
-                <p>O comprovante está anexado ao acerto, na tela de conciliação.</p>
+                %s
+                <p>O comprovante está na tela de conciliação, junto do pagamento.</p>
                 <p><a href="%s">Conferir no JcardApp</a></p>
-                """.formatted(a.usuario.nome, valor(a.valorDevido),
-                a.fatura.competencia.format(MES), appUrl);
+                """.formatted(a.usuario.nome, valor(pago),
+                a.fatura.competencia.format(MES), falta, appUrl);
         for (Usuario admin : Usuario.<Usuario>list("admin = true and ativo = true")) {
             if (admin.email == null || admin.email.isBlank()) {
                 continue;
