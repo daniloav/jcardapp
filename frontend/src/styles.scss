@@ -486,6 +486,48 @@ h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
   .atribuir { margin-top: 0; flex-wrap: wrap; }
 }
 
+/* ------------------------------------------------- quitação em parcelas -- */
+
+/* O que já entrou e o que falta. Fica em bloco próprio porque é a pergunta que
+   a pessoa faz ao abrir a tela depois de já ter pago uma vez. */
+.quitacao {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-radius: var(--raio);
+  background: #f7f9fb;
+
+  > .linha { padding: 0.15rem 0; }
+  > .linha.pendente strong { color: var(--erro); }
+  .meta { color: var(--texto-suave); font-size: 0.85rem; margin-top: 0.4rem; }
+}
+
+/* A lista de transferências, na tela da pessoa e na do admin. */
+.pagamentos {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  font-size: 0.9rem;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0;
+    border-top: 1px solid var(--borda);
+  }
+  strong { font-variant-numeric: tabular-nums; }
+  .meta { flex-basis: 100%; }
+}
+
+/* Dentro da tabela do admin a coluna encolhe até 97 px no celular, e a
+   transferência quebra em cinco linhas. A tabela já rola de lado: dar largura
+   mínima aqui troca aperto por rolagem, que é o que se lê. */
+td > .pagamentos { min-width: 15rem; }
+
+/* Quanto ainda falta — é o número que decide se o admin pode fechar a fatura. */
+.falta { color: var(--erro); }
+
 /* A conta de uma pessoa aberta para conferência, dentro do cartão. Separada por
    uma linha porque é uma leitura longa: duas tabelas e um total. */
 .detalhe-conta {

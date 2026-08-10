@@ -3,6 +3,7 @@ package br.com.jcard.service;
 import br.com.jcard.model.AcaoAuditoria;
 import br.com.jcard.model.Acerto;
 import br.com.jcard.model.ComprovantePagamento;
+import br.com.jcard.model.PagamentoAcerto;
 import br.com.jcard.model.StatusAcerto;
 import br.com.jcard.model.StatusFatura;
 import br.com.jcard.model.Usuario;
@@ -10,6 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -50,103 +52,218 @@ public class AcertoService {
     @Inject
     AuditoriaService auditoria;
 
-    /** "Conferi o total e concordo." Abre o formulário de pagamento. */
-    @Transactional
-    public Acerto aceitar(Long faturaId, Usuario quem) {
-        Acerto a = meu(faturaId, quem);
-        exigirFaturaFechavel(a);
-        if (a.status == StatusAcerto.CONFIRMADO || a.status == StatusAcerto.INFORMADO) {
-            throw new WebApplicationException("Este acerto já passou do aceite.", 409);
-        }
-        a.status = StatusAcerto.ACEITO;
-        a.aceitoEm = LocalDateTime.now();
-        a.persist();
-        auditoria.registrar(quem, AcaoAuditoria.ACEITAR_VALOR, "Acerto", a.id,
-                "R$ " + a.valorDevido);
-        return a;
-    }
-
     /**
-     * O utilizador diz que pagou e anexa o comprovante. Não confirma nada
-     * sozinho — quem confere se o dinheiro caiu é o admin.
+     * "Conferi o total e concordo." Abre o formulário de pagamento.
+     *
+     * <p>Vale também para quem <b>já pagou</b> e viu o valor subir depois: o
+     * aceite é sobre um número, e o número mudou. Enquanto sobrar saldo, a
+     * pessoa concorda de novo antes de mandar o complemento — é o mesmo
+     * princípio de "pagar exige aceitar antes", aplicado à diferença.
      */
     @Transactional
-    public Acerto informarPagamento(Long faturaId, Usuario quem, LocalDate pagoEm,
-                                    String observacao, byte[] arquivo,
-                                    String nomeArquivo, String tipoArquivo) {
+    public Acerto aceitar(Long faturaId, Usuario quem) {
         Acerto a = meu(faturaId, quem);
         exigirFaturaFechavel(a);
         if (a.status == StatusAcerto.CONFIRMADO) {
             throw new WebApplicationException("Este acerto já foi confirmado.", 409);
         }
-        if (a.status == StatusAcerto.ABERTO) {
-            throw new WebApplicationException(
-                    "Confira e aceite o valor antes de declarar o pagamento.", 409);
+        if (a.aceitoEm != null && saldo(a).signum() <= 0) {
+            throw new WebApplicationException("Este acerto já passou do aceite.", 409);
         }
-
-        salvarComprovante(a, arquivo, nomeArquivo, tipoArquivo);
-
-        a.status = StatusAcerto.INFORMADO;
-        a.informadoEm = LocalDateTime.now();
-        a.pagoEm = pagoEm == null ? LocalDate.now() : pagoEm;
-        a.observacao = observacao;
+        // Com transferência já declarada o acerto continua INFORMADO: ele tem
+        // dinheiro dentro, e voltar para ACEITO esconderia isso da tela do admin.
+        boolean temPagamento = !PagamentoAcerto.doAcerto(a.id).isEmpty();
+        a.status = temPagamento ? StatusAcerto.INFORMADO : StatusAcerto.ACEITO;
+        a.aceitoEm = LocalDateTime.now();
         a.persist();
-        auditoria.registrar(quem, AcaoAuditoria.INFORMAR_PAGAMENTO, "Acerto", a.id,
-                "R$ " + a.valorDevido + " · comprovante " + nomeArquivo);
-        notificacao.pagamentoInformado(a);
-        return a;
-    }
-
-    /** O admin confirma que o dinheiro entrou. */
-    @Transactional
-    public Acerto confirmarPagamento(Long acertoId, Usuario admin) {
-        Acerto a = buscar(acertoId);
-        if (a.status == StatusAcerto.CONFIRMADO) {
-            return a;
-        }
-        a.status = StatusAcerto.CONFIRMADO;
-        a.confirmadoEm = LocalDateTime.now();
-        a.confirmadoPor = admin;
-        a.persist();
-        auditoria.registrar(admin, AcaoAuditoria.CONFIRMAR_PAGAMENTO, "Acerto", a.id,
-                a.usuario.nome + " · R$ " + a.valorDevido);
-        notificacao.pagamentoConfirmado(a);
-        return a;
-    }
-
-    /** Desfaz uma confirmação feita por engano. O comprovante fica. */
-    @Transactional
-    public Acerto reabrir(Long acertoId, Usuario admin) {
-        Acerto a = buscar(acertoId);
-        a.status = StatusAcerto.ABERTO;
-        a.confirmadoEm = null;
-        a.confirmadoPor = null;
-        a.informadoEm = null;
-        a.aceitoEm = null;
-        a.persist();
-        auditoria.registrar(admin, AcaoAuditoria.ATUALIZAR, "Acerto", a.id, "reaberto");
+        auditoria.registrar(quem, AcaoAuditoria.ACEITAR_VALOR, "Acerto", a.id,
+                "R$ " + a.valorDevido + (temPagamento ? " (novo valor, com saldo em aberto)" : ""));
         return a;
     }
 
     /**
-     * O comprovante em si. Só o dono do acerto e o admin veem — é documento
-     * bancário de outra pessoa.
+     * O utilizador declara <b>uma</b> transferência, com valor e comprovante.
+     *
+     * <p>Pode ser a quitação inteira ou uma parte. Quando o valor devido sobe
+     * depois de a pessoa já ter pago — o divisor do encargo mudou, o admin
+     * atribuiu mais um lançamento —, ela declara um pagamento complementar e o
+     * primeiro continua registrado com a prova dele.
+     *
+     * <p>Não confirma nada sozinho: quem confere se o dinheiro caiu é o admin.
      */
-    public ComprovantePagamento comprovante(Long acertoId, Usuario quem, boolean admin) {
+    @Transactional
+    public PagamentoAcerto informarPagamento(Long faturaId, Usuario quem, BigDecimal valor,
+                                             LocalDate pagoEm, String observacao, byte[] arquivo,
+                                             String nomeArquivo, String tipoArquivo) {
+        Acerto a = meu(faturaId, quem);
+        exigirFaturaFechavel(a);
+        if (a.status == StatusAcerto.CONFIRMADO) {
+            throw new WebApplicationException("Este acerto já foi confirmado.", 409);
+        }
+        // O aceite, e não o status: quando o valor muda, o aceite anterior é
+        // anulado mesmo que a pessoa já tenha declarado uma transferência — ela
+        // concorda com o número novo antes de mandar a diferença.
+        if (a.aceitoEm == null) {
+            throw new WebApplicationException(
+                    "Confira e aceite o valor antes de declarar o pagamento.", 409);
+        }
+
+        BigDecimal declarado = valorDeclarado(a, valor);
+
+        PagamentoAcerto p = new PagamentoAcerto();
+        p.acerto = a;
+        p.valor = declarado;
+        p.pagoEm = pagoEm == null ? LocalDate.now() : pagoEm;
+        p.observacao = observacao;
+        p.informadoEm = LocalDateTime.now();
+        p.persist();
+
+        salvarComprovante(p, arquivo, nomeArquivo, tipoArquivo);
+
+        // Os campos do acerto seguem o último pagamento: são o que a listagem
+        // mostra sem abrir a lista de transferências.
+        a.status = StatusAcerto.INFORMADO;
+        a.informadoEm = p.informadoEm;
+        a.pagoEm = p.pagoEm;
+        a.observacao = observacao;
+        a.persist();
+
+        auditoria.registrar(quem, AcaoAuditoria.INFORMAR_PAGAMENTO, "Acerto", a.id,
+                "R$ " + declarado + " de R$ " + a.valorDevido
+                + " · comprovante " + nomeArquivo);
+        notificacao.pagamentoInformado(a, declarado, saldo(a));
+        return p;
+    }
+
+    /**
+     * O admin confirma <b>uma</b> transferência.
+     *
+     * <p>Uma de cada vez porque é assim que ele confere: uma entrada por vez, no
+     * extrato. O acerto só fica {@code CONFIRMADO} quando todas estão
+     * confirmadas e o saldo zerou — confirmar o acerto inteiro com saldo em
+     * aberto diria que a pessoa pagou o que ela não pagou.
+     */
+    @Transactional
+    public PagamentoAcerto confirmarPagamento(Long pagamentoId, Usuario admin) {
+        PagamentoAcerto p = PagamentoAcerto.findById(pagamentoId);
+        if (p == null) {
+            throw new WebApplicationException("Pagamento não encontrado.", 404);
+        }
+        if (!p.confirmado()) {
+            p.confirmadoEm = LocalDateTime.now();
+            p.confirmadoPor = admin;
+            p.persist();
+            auditoria.registrar(admin, AcaoAuditoria.CONFIRMAR_PAGAMENTO, "Acerto", p.acerto.getId(),
+                    p.acerto.usuario.nome + " · R$ " + p.valor);
+        }
+        quitarSeFechou(p.acerto);
+        return p;
+    }
+
+    /**
+     * Desfaz a confirmação do acerto. Os pagamentos e os comprovantes ficam: o
+     * dinheiro saiu, e apagar a prova disso seria negá-lo.
+     *
+     * <p>O acerto volta para {@code INFORMADO} se já houver transferência
+     * declarada, ou para {@code ABERTO} se não houver — e o aceite cai nos dois
+     * casos, porque é o valor que vai voltar a mudar.
+     */
+    @Transactional
+    public Acerto reabrir(Long acertoId, Usuario admin) {
         Acerto a = buscar(acertoId);
-        if (!admin && !a.usuario.getId().equals(quem.id)) {
+        boolean temPagamento = !PagamentoAcerto.doAcerto(acertoId).isEmpty();
+        a.status = temPagamento ? StatusAcerto.INFORMADO : StatusAcerto.ABERTO;
+        a.confirmadoEm = null;
+        a.confirmadoPor = null;
+        a.aceitoEm = null;
+        if (!temPagamento) {
+            a.informadoEm = null;
+        }
+        a.persist();
+        auditoria.registrar(admin, AcaoAuditoria.ATUALIZAR, "Acerto", a.id,
+                temPagamento
+                        ? "reaberto · " + PagamentoAcerto.doAcerto(acertoId).size()
+                          + " pagamento(s) mantidos"
+                        : "reaberto");
+        return a;
+    }
+
+    /**
+     * O comprovante de uma transferência. Só o dono do acerto e o admin veem —
+     * é documento bancário de outra pessoa.
+     */
+    public ComprovantePagamento comprovante(Long pagamentoId, Usuario quem, boolean admin) {
+        PagamentoAcerto p = PagamentoAcerto.findById(pagamentoId);
+        if (p == null) {
+            throw new WebApplicationException("Pagamento não encontrado.", 404);
+        }
+        if (!admin && !p.acerto.usuario.getId().equals(quem.id)) {
             throw new WebApplicationException("Este comprovante não é seu.", 403);
         }
-        ComprovantePagamento c = ComprovantePagamento.doAcerto(acertoId);
+        ComprovantePagamento c = ComprovantePagamento.doPagamento(pagamentoId);
         if (c == null) {
-            throw new WebApplicationException("Este acerto não tem comprovante.", 404);
+            throw new WebApplicationException("Este pagamento não tem comprovante.", 404);
         }
         return c;
     }
 
+    /** Quanto ainda falta neste acerto. Derivado, nunca gravado. */
+    public BigDecimal saldo(Acerto a) {
+        return a.valorDevido.subtract(PagamentoAcerto.totalPago(a.id));
+    }
+
     // ------------------------------------------------------------ internos --
 
-    private void salvarComprovante(Acerto a, byte[] arquivo, String nome, String tipo) {
+    /**
+     * O valor da transferência declarada.
+     *
+     * <p>Em branco vale "paguei o que faltava" — é o caso comum, e obrigar a
+     * digitar de novo um número que o app acabou de mostrar só cria divergência
+     * de centavo. Pagamento com sinal trocado é recusado: crédito de fatura é
+     * assunto do lançamento, não do acerto.
+     */
+    private BigDecimal valorDeclarado(Acerto a, BigDecimal valor) {
+        BigDecimal falta = saldo(a);
+        if (valor == null) {
+            if (falta.signum() == 0) {
+                throw new WebApplicationException(
+                        "Este acerto já está quitado: informe o valor se pagou algo a mais.", 409);
+            }
+            return falta;
+        }
+        BigDecimal declarado = valor.setScale(2, java.math.RoundingMode.HALF_UP);
+        if (declarado.signum() == 0) {
+            throw new WebApplicationException("Informe quanto você pagou.", 400);
+        }
+        if (falta.signum() != 0 && declarado.signum() != falta.signum()) {
+            throw new WebApplicationException(
+                    "O valor tem sinal contrário ao que falta pagar (R$ " + falta + ").", 400);
+        }
+        return declarado;
+    }
+
+    /**
+     * Fecha o acerto quando não falta nada e o admin confirmou tudo.
+     *
+     * <p>Os dois de uma vez: saldo zerado com transferência ainda por conferir
+     * seria dar por recebido o que ninguém viu cair, e confirmar tudo com saldo
+     * em aberto marcaria como pago quem ainda deve.
+     */
+    private void quitarSeFechou(Acerto a) {
+        List<PagamentoAcerto> pagamentos = PagamentoAcerto.doAcerto(a.id);
+        boolean todosConfirmados = pagamentos.stream().allMatch(PagamentoAcerto::confirmado);
+        boolean quitado = saldo(a).signum() <= 0;
+        if (!todosConfirmados || !quitado || a.status == StatusAcerto.CONFIRMADO) {
+            return;
+        }
+        a.status = StatusAcerto.CONFIRMADO;
+        a.confirmadoEm = LocalDateTime.now();
+        a.confirmadoPor = pagamentos.get(pagamentos.size() - 1).confirmadoPor;
+        a.persist();
+        notificacao.pagamentoConfirmado(a);
+    }
+
+    private void salvarComprovante(PagamentoAcerto p, byte[] arquivo, String nome, String tipo) {
         if (arquivo == null || arquivo.length == 0) {
             throw new WebApplicationException(
                     "Anexe o comprovante do PIX ou da transferência.", 400);
@@ -162,11 +279,13 @@ public class AcertoService {
                     "Mande o comprovante como imagem (print) ou PDF.", 415);
         }
 
-        // Reenviar substitui: a pessoa mandou o print errado e corrige.
-        ComprovantePagamento c = ComprovantePagamento.doAcerto(a.id);
+        // Um comprovante por transferência. Reenviar substitui o daquela
+        // transferência — a pessoa mandou o print errado e corrige —, e nunca
+        // toca no comprovante das outras.
+        ComprovantePagamento c = ComprovantePagamento.doPagamento(p.id);
         if (c == null) {
             c = new ComprovantePagamento();
-            c.acerto = a;
+            c.pagamento = p;
         }
         c.nome = nome == null || nome.isBlank() ? "comprovante" : nome;
         if (c.nome.length() > 255) {

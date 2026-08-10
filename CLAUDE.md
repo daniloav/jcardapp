@@ -34,7 +34,8 @@ Três coisas decorrem disso e valem repetir:
   Por isso ele fica **sem responsável** mesmo depois da conciliação.
 - **Pagar exige aceitar antes.** `ABERTO → ACEITO → INFORMADO → CONFIRMADO`, com
   comprovante obrigatório do PIX. O aceite só abre com a fatura conciliada, que é
-  quando o valor para de mudar.
+  quando o valor para de mudar. A quitação pode vir em **várias transferências**:
+  cada uma com valor e comprovante, e o acerto só fecha com saldo zero.
 
 Toda fatura importada dispara e-mail a **todos** os utilizadores ativos pedindo
 avaliação de responsabilidade.
@@ -89,6 +90,7 @@ jcardapp/
 │       ├── dto/ · security/ · bootstrap/
 │       └── resources/db/migration/  ← V1__schema · V2__divisao_encargos_comprovante
 │                                       V3__reabertura_e_apelidos
+│                                       V4__pagamento_parcial
 ├── frontend/                   ← Angular 17
 │   ├── Dockerfile.runtime · nginx.conf
 │   └── src/{sw.js, manifest.webmanifest, app/{core,layout,pages}}
@@ -121,7 +123,7 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 108 testes, incluindo as duas
+- **Backend**: `cd backend && mvn -B verify` — 113 testes, incluindo as duas
   invariantes de conciliação, a atribuição em massa, a divisão de contas, o
   rateio de encargos, o ciclo
   de pagamento com comprovante, a herança de parcela, a reabertura da avaliação,
@@ -158,6 +160,14 @@ com troca de senha obrigatória.
   PIX**, ao contrário, é guardado — ele *é* a prova do acerto. Fica em tabela
   própria (`comprovante_pagamento`) e não numa coluna de `acerto`, senão o
   `byte[]` viajaria junto em toda listagem de acertos do admin.
+- **O acerto é quitado por N transferências, e o saldo é derivado.** O app
+  registrava quanto a pessoa deve e nunca quanto ela pagou: um comprovante por
+  acerto, e reenviar substituía. Aí a pessoa paga R$ 100, o total dela sobe no
+  fechamento e ela manda a diferença — o segundo print apagava a prova do
+  primeiro. Agora cada transferência tem valor, data e comprovante próprios; o
+  saldo (`devido - Σ pagos`) é calculado a cada leitura, nunca gravado; o admin
+  confirma uma de cada vez; e o acerto só fecha com tudo confirmado E saldo
+  zero. Reabrir mantém os pagamentos: o dinheiro saiu.
 - **Divisão manda no rateio.** Havendo linhas em `divisao_lancamento`, elas são a
   verdade daquele lançamento e o `responsavel` passa a valer só como "quem
   organizou" — continua preenchido porque é dele que o compromisso parcelado tira
@@ -264,12 +274,16 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 108 testes verdes (`mvn verify`).
+- ✅ Backend completo, 113 testes verdes (`mvn verify`).
 - ✅ Frontend Angular 17 + PWA compilando (87 kB no bundle inicial).
 - ✅ **Tela inicial (`/inicio`)** — é onde o login cai: gráfico das faturas por mês
    (fechada, em andamento, divergente), os dois totais e "precisa de você", que
    muda de conteúdo para admin e para utilizador. Conferida no app rodando, no
    desktop e no tamanho de celular.
+- ✅ **Pagamento parcial e complementar** — o acerto aceita várias
+   transferências, cada uma com valor e comprovante; a tela da pessoa mostra
+   "já pago / ainda falta" e o admin dá o "recebi" uma a uma. Conferido no app
+   rodando (R$ 100 + R$ 293,24 fechando R$ 393,24) e no tamanho de celular.
 - ✅ Conta dividida, encargo rateado, aceite com comprovante de PIX e exclusão de
    fatura — implementados e conferidos no app rodando.
 - ✅ **Fluxo de indicação (ROADMAP §2)** — reabrir a avaliação, admin atribuir

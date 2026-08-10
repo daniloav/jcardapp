@@ -7,6 +7,7 @@ import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
 import br.com.jcard.model.OrigemAtribuicao;
+import br.com.jcard.model.PagamentoAcerto;
 import br.com.jcard.model.ResumoFatura;
 import br.com.jcard.model.StatusAcerto;
 import br.com.jcard.model.StatusFatura;
@@ -16,6 +17,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Payloads de saída. Entidades nunca vão direto para a API — além do risco de
@@ -208,20 +211,74 @@ public final class Responses {
     // -------------------------------------------------------------- acerto --
 
     /**
-     * @param temComprovante o anexo nunca vem embutido: é binário e a lista do
-     *                       admin carrega todos os acertos da fatura de uma vez
+     * Uma transferência declarada, dentro de um acerto.
+     *
+     * @param temComprovante o anexo nunca vem embutido: é binário, e a lista do
+     *                       admin carrega os pagamentos de todos os acertos da
+     *                       fatura de uma vez
+     */
+    public record PagamentoResponse(Long id, BigDecimal valor, LocalDate pagoEm,
+                                    String observacao, LocalDateTime informadoEm,
+                                    LocalDateTime confirmadoEm, boolean temComprovante) {
+        public static PagamentoResponse de(PagamentoAcerto p, boolean temComprovante) {
+            return new PagamentoResponse(p.id, p.valor, p.pagoEm, p.observacao,
+                    p.informadoEm, p.confirmadoEm, temComprovante);
+        }
+    }
+
+    /**
+     * Quanto a pessoa deve, quanto já pagou e em que ponto está a quitação.
+     *
+     * @param valorPago  a soma das transferências declaradas, confirmadas ou não
+     * @param saldo      {@code valorDevido - valorPago}; derivado, nunca gravado,
+     *                   porque o valor devido muda a cada recálculo do rateio
+     * @param pagamentos as transferências, cada uma com o comprovante dela
      */
     public record AcertoResponse(Long id, Long faturaId, LocalDate competencia,
                                  Long usuarioId, String usuarioNome, BigDecimal valorDevido,
                                  StatusAcerto status, LocalDateTime aceitoEm,
                                  LocalDate pagoEm, LocalDateTime informadoEm,
                                  LocalDateTime confirmadoEm, String observacao,
-                                 boolean temComprovante) {
+                                 BigDecimal valorPago, BigDecimal saldo,
+                                 List<PagamentoResponse> pagamentos) {
+
+        /** Duas consultas por acerto: use {@link #daFatura} para listas de uma fatura. */
         public static AcertoResponse de(Acerto a) {
+            List<PagamentoAcerto> pagamentos = PagamentoAcerto.doAcerto(a.id);
+            return montar(a, pagamentos, ComprovantePagamento.pagamentosComComprovante(
+                    pagamentos.stream().map(p -> p.id).toList()));
+        }
+
+        /**
+         * Todos os acertos da fatura com os pagamentos e os comprovantes, em
+         * três consultas fixas — e não três por pessoa.
+         */
+        public static List<AcertoResponse> daFatura(Long faturaId, List<Acerto> acertos) {
+            Map<Long, List<PagamentoAcerto>> porAcerto = new java.util.HashMap<>();
+            for (PagamentoAcerto p : PagamentoAcerto.<PagamentoAcerto>list(
+                    "acerto.fatura.id = ?1 order by pagoEm, id", faturaId)) {
+                porAcerto.computeIfAbsent(p.acerto.getId(), k -> new java.util.ArrayList<>()).add(p);
+            }
+            Set<Long> comComprovante =
+                    ComprovantePagamento.pagamentosComComprovanteDaFatura(faturaId);
+            return acertos.stream()
+                    .map(a -> montar(a, porAcerto.getOrDefault(a.id, List.of()), comComprovante))
+                    .toList();
+        }
+
+        private static AcertoResponse montar(Acerto a, List<PagamentoAcerto> pagamentos,
+                                             Set<Long> comComprovante) {
+            BigDecimal pago = pagamentos.stream()
+                    .map(p -> p.valor)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
             return new AcertoResponse(a.id, a.fatura.getId(), a.fatura.competencia,
                     a.usuario.getId(), a.usuario.nome, a.valorDevido, a.status,
                     a.aceitoEm, a.pagoEm, a.informadoEm, a.confirmadoEm, a.observacao,
-                    ComprovantePagamento.existePara(a.id));
+                    pago, a.valorDevido.subtract(pago),
+                    pagamentos.stream()
+                            .map(p -> PagamentoResponse.de(p, comComprovante.contains(p.id)))
+                            .toList());
         }
     }
 

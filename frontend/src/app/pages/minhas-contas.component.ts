@@ -6,7 +6,8 @@ import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ToastService } from '../core/toast.service';
 import {
-  Lancamento, MinhasContas, Pessoa, descricaoSemParcela, nomeDoLancamento,
+  Acerto, Lancamento, MinhasContas, Pagamento, Pessoa,
+  descricaoSemParcela, nomeDoLancamento,
 } from '../core/models';
 
 /** Uma linha do editor de divisão: pessoa marcada e quanto ela paga. */
@@ -84,9 +85,9 @@ interface Grupo {
               {{ rotuloAcerto(a.status) }}
             </span>
 
-            @if (a.status === 'ABERTO' && podePagar()) {
+            @if (precisaAceitar(a) && podePagar()) {
               <button type="button" [disabled]="ocupado()" (click)="aceitar()">
-                Conferi e aceito o valor
+                {{ a.valorPago > 0 ? 'Conferi e aceito o novo valor' : 'Conferi e aceito o valor' }}
               </button>
             }
           </div>
@@ -98,8 +99,50 @@ interface Grupo {
             </p>
           }
 
+          <!-- ------------------------------------ o que já foi pago e o saldo -- -->
+          @if (a.pagamentos.length > 0) {
+            <div class="quitacao">
+              <div class="linha">
+                <span>Já pago</span>
+                <strong>{{ a.valorPago | currency: 'BRL' }}</strong>
+              </div>
+              <div class="linha" [class.pendente]="a.saldo > 0">
+                <span>{{ a.saldo > 0 ? 'Ainda falta' : 'Saldo' }}</span>
+                <strong>{{ a.saldo | currency: 'BRL' }}</strong>
+              </div>
+              <ul class="pagamentos">
+                @for (p of a.pagamentos; track p.id) {
+                  <li>
+                    <span>{{ p.pagoEm | date: 'dd/MM/yyyy' }}</span>
+                    <strong>{{ p.valor | currency: 'BRL' }}</strong>
+                    @if (p.confirmadoEm) {
+                      <span class="tag ok">recebido</span>
+                    } @else {
+                      <span class="tag alerta">a conferir</span>
+                    }
+                    @if (p.temComprovante) {
+                      <button type="button" class="btn-texto" (click)="verComprovante(p)">
+                        comprovante
+                      </button>
+                    }
+                    @if (p.observacao) {
+                      <div class="meta">{{ p.observacao }}</div>
+                    }
+                  </li>
+                }
+              </ul>
+              @if (a.saldo > 0 && a.status !== 'CONFIRMADO') {
+                <p class="meta">
+                  O seu total mudou depois do primeiro pagamento. Confira o valor de
+                  novo e mande só a diferença — o que você já pagou continua
+                  registrado, com o comprovante.
+                </p>
+              }
+            </div>
+          }
+
           <!-- ------------------------------------------ declarar pagamento -- -->
-          @if (a.status === 'ACEITO') {
+          @if (podeDeclararPagamento(a)) {
             <hr>
             <h3>Pagar</h3>
             <div class="pix">
@@ -112,7 +155,17 @@ interface Grupo {
               </div>
             </div>
 
-            <form (ngSubmit)="pagar()">
+            <form (ngSubmit)="pagar(a)">
+              <label for="valorPago">Quanto você pagou</label>
+              <input id="valorPago" type="text" inputmode="decimal" name="valorPago"
+                     [(ngModel)]="valorPago"
+                     [placeholder]="'em branco = tudo que falta (' + (a.saldo | currency: 'BRL') + ')'">
+              <p class="meta">
+                Deixe em branco se pagou o total. Preencha quando mandar só uma parte
+                — o saldo continua aberto e você declara o resto depois, com o
+                comprovante daquela transferência.
+              </p>
+
               <label for="pagoEm">Data do pagamento</label>
               <input id="pagoEm" type="date" name="pagoEm" [(ngModel)]="pagoEm" required>
 
@@ -129,15 +182,15 @@ interface Grupo {
                      [(ngModel)]="observacao" placeholder="ex.: paguei junto com o mês passado">
 
               <button type="submit" [disabled]="ocupado() || !arquivo()">
-                Declarar pagamento
+                {{ a.valorPago > 0 ? 'Declarar pagamento complementar' : 'Declarar pagamento' }}
               </button>
             </form>
           }
 
-          @if (a.status === 'INFORMADO') {
+          @if (a.status === 'INFORMADO' && a.saldo <= 0) {
             <p class="meta">
-              Pagamento declarado em {{ a.pagoEm | date: 'dd/MM/yyyy' }} com comprovante
-              anexado. Aguardando a confirmação do administrador.
+              Pagamento declarado com comprovante anexado. Aguardando a confirmação
+              do administrador.
             </p>
           }
           @if (a.status === 'CONFIRMADO') {
@@ -463,6 +516,8 @@ export class MinhasContasComponent {
   soConhecidos = signal(false);
 
   pagoEm = new Date().toISOString().slice(0, 10);
+  /** Em branco vale "paguei tudo que falta" — o caso comum. */
+  valorPago = '';
   observacao = '';
   arquivo = signal<File | null>(null);
 
@@ -749,22 +804,55 @@ export class MinhasContasComponent {
     this.arquivo.set(input.files?.[0] ?? null);
   }
 
-  pagar(): void {
+  /**
+   * O aceite vale para um valor. Se ele mudou depois de a pessoa já ter pago, o
+   * backend anula o aceite e ela concorda de novo antes de mandar a diferença —
+   * por isso a checagem é o `aceitoEm`, e não o status.
+   */
+  precisaAceitar(a: Acerto): boolean {
+    return a.status !== 'CONFIRMADO' && !a.aceitoEm && a.saldo > 0;
+  }
+
+  podeDeclararPagamento(a: Acerto): boolean {
+    return a.status !== 'CONFIRMADO' && !!a.aceitoEm && a.saldo > 0;
+  }
+
+  pagar(a: Acerto): void {
     const fatura = this.dados()?.fatura;
     const comprovante = this.arquivo();
     if (!fatura || !comprovante) {
       return;
     }
     this.ocupado.set(true);
-    this.api.informarPagamento(fatura.id, comprovante, this.pagoEm, this.observacao).subscribe({
-      next: () => {
-        this.toast.ok('Pagamento declarado. O administrador vai conferir o comprovante.');
+    this.api.informarPagamento(
+      fatura.id, comprovante, this.valorPago, this.pagoEm, this.observacao).subscribe({
+      next: (atualizado) => {
+        this.toast.ok(atualizado.saldo > 0
+          ? `Pagamento declarado. Ainda faltam ${this.emReais(atualizado.saldo)}.`
+          : 'Pagamento declarado. O administrador vai conferir o comprovante.');
         this.arquivo.set(null);
         this.observacao = '';
+        this.valorPago = '';
         this.recarregar();
       },
       error: () => this.ocupado.set(false),
     });
+  }
+
+  /** Abre o comprovante de uma transferência numa aba nova (o endpoint exige JWT). */
+  verComprovante(p: Pagamento): void {
+    this.api.comprovante(p.id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      },
+      error: () => this.toast.erro('Não consegui abrir o comprovante.'),
+    });
+  }
+
+  private emReais(valor: number): string {
+    return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
 
   copiarChave(chave: string): void {

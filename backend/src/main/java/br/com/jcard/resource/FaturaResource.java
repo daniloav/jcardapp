@@ -159,8 +159,7 @@ public class FaturaResource {
                                 .comApelido(apelidos.get(l.descricaoNormalizada))
                                 .comDivisao(DivisaoLancamento.doLancamento(l.id), eu.id))
                         .toList(),
-                "acertos", Acerto.daFatura(id).stream()
-                        .map(Responses.AcertoResponse::de).toList());
+                "acertos", Responses.AcertoResponse.daFatura(id, Acerto.daFatura(id)));
     }
 
     /**
@@ -252,7 +251,9 @@ public class FaturaResource {
     @RolesAllowed(TokenService.ADMIN)
     @Transactional
     public List<Responses.AcertoResponse> acertos(@PathParam("id") Long id) {
-        return Acerto.daFatura(id).stream().map(Responses.AcertoResponse::de).toList();
+        // Em lote: os pagamentos e os comprovantes de todos os acertos saem em
+        // duas consultas, e não em duas por pessoa.
+        return Responses.AcertoResponse.daFatura(id, Acerto.daFatura(id));
     }
 
     /**
@@ -381,11 +382,15 @@ public class FaturaResource {
     }
 
     /**
-     * O utilizador declara que pagou a parte dele nesta fatura.
+     * O utilizador declara <b>uma</b> transferência desta fatura.
      *
      * <p>É multipart porque o comprovante do PIX é <b>obrigatório</b>: sem ele
      * não existe registro de que o dinheiro saiu, e a confirmação do admin viraria
      * palavra contra palavra.
+     *
+     * <p>O {@code valor} é opcional e em branco vale "paguei o que faltava" — o
+     * caso comum. Quando vem preenchido, é pagamento parcial ou complementar, e
+     * o saldo continua aberto até fechar.
      */
     @POST
     @Path("/{id}/pagamento")
@@ -393,6 +398,7 @@ public class FaturaResource {
     @Transactional
     public Responses.AcertoResponse informarPagamento(@PathParam("id") Long id,
                                                       @RestForm("comprovante") FileUpload comprovante,
+                                                      @RestForm String valor,
                                                       @RestForm String pagoEm,
                                                       @RestForm String observacao) {
         Usuario eu = logado.exigirSenhaTrocada();
@@ -407,8 +413,8 @@ public class FaturaResource {
             throw new WebApplicationException("Falha ao ler o comprovante enviado.", 400);
         }
         return Responses.AcertoResponse.de(acertos.informarPagamento(
-                id, eu, dataDe(pagoEm), observacao, conteudo,
-                comprovante.fileName(), comprovante.contentType()));
+                id, eu, valorDe(valor), dataDe(pagoEm), observacao, conteudo,
+                comprovante.fileName(), comprovante.contentType()).acerto);
     }
 
     /**
@@ -448,6 +454,27 @@ public class FaturaResource {
     }
 
     /** Data do pagamento; ausente ou ilegível vira "hoje", que é o caso comum. */
+    /**
+     * O valor de uma transferência, como a tela manda. Aceita "1.234,56" e
+     * "1234.56": o campo é digitado no celular, e recusar por causa da vírgula
+     * seria travar o pagamento por formatação.
+     */
+    private BigDecimal valorDe(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+        String limpo = valor.strip().replace("R$", "").strip();
+        if (limpo.contains(",")) {
+            limpo = limpo.replace(".", "").replace(',', '.');
+        }
+        try {
+            return new BigDecimal(limpo);
+        } catch (RuntimeException e) {
+            throw new WebApplicationException(
+                    "Valor do pagamento inválido: informe algo como 130,00.", 400);
+        }
+    }
+
     private LocalDate dataDe(String data) {
         if (data == null || data.isBlank()) {
             return null;

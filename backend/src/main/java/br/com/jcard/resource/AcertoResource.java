@@ -51,14 +51,14 @@ public class AcertoResource {
     }
 
     /**
-     * O comprovante anexado. Sai como o arquivo original, {@code inline}, para o
-     * admin conferir sem baixar nada.
+     * O comprovante de <b>uma</b> transferência. Sai como o arquivo original,
+     * {@code inline}, para o admin conferir sem baixar nada.
      *
      * <p>Só o dono do acerto e o admin passam: é documento bancário de outra
      * pessoa, e o resto do app já esconde as contas alheias.
      */
     @GET
-    @Path("/acertos/{id}/comprovante")
+    @Path("/pagamentos/{id}/comprovante")
     @Produces(MediaType.WILDCARD)
     @Transactional
     public Response comprovante(@PathParam("id") Long id) {
@@ -71,12 +71,19 @@ public class AcertoResource {
                 .build();
     }
 
+    /**
+     * O admin dá por recebida uma transferência.
+     *
+     * <p>Uma de cada vez: é assim que ele confere no extrato, e o acerto só
+     * fecha quando todas estão confirmadas e não sobra saldo.
+     */
     @POST
-    @Path("/acertos/{id}/confirmar")
+    @Path("/pagamentos/{id}/confirmar")
     @RolesAllowed(TokenService.ADMIN)
     @Transactional
     public Responses.AcertoResponse confirmar(@PathParam("id") Long id) {
-        return Responses.AcertoResponse.de(servico.confirmarPagamento(id, logado.get()));
+        return Responses.AcertoResponse.de(
+                servico.confirmarPagamento(id, logado.get()).acerto);
     }
 
     @POST
