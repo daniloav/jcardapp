@@ -87,6 +87,11 @@ public final class Responses {
     /**
      * Um lançamento como o utilizador vê.
      *
+     * @param descricaoNormalizada a chave do estabelecimento (sem acento, caixa
+     *                    alta, sem o sufixo de parcela); é por ela que o apelido
+     *                    é gravado e que a mesma loja se reconhece entre faturas
+     * @param apelido     o nome que a família deu à loja, quando alguém já deu;
+     *                    a tela mostra ele no lugar do que o banco imprime
      * @param minhaParte  quanto <b>deste</b> lançamento é de quem está olhando:
      *                    o valor cheio quando ele é o responsável, a fatia dele
      *                    quando a conta é dividida ou quando é um encargo rateado
@@ -94,23 +99,28 @@ public final class Responses {
      * @param disputantes nomes de quem reivindicou; só é preenchido para o admin
      *                    na fila de conflitos — o utilizador comum não vê quem
      *                    mais está disputando
+     * @param jaFoiSeu    quem está olhando já assumiu compra nesta mesma loja em
+     *                    outra fatura; no pool, transforma leitura em conferência
      */
     public record LancamentoResponse(Long id, LocalDate dataCompra, String descricao,
+                                     String descricaoNormalizada, String apelido,
                                      BigDecimal valor, String portadorNome, String final4,
                                      Integer parcelaAtual, Integer parcelaTotal,
                                      TipoLancamento tipo, Long responsavelId,
                                      String responsavelNome, OrigemAtribuicao origemAtribuicao,
                                      boolean meu, BigDecimal minhaParte,
-                                     List<ParteResponse> divisao, List<String> disputantes) {
+                                     List<ParteResponse> divisao, List<String> disputantes,
+                                     boolean jaFoiSeu) {
 
         public static LancamentoResponse de(Lancamento l, Long usuarioId) {
-            return new LancamentoResponse(l.id, l.dataCompra, l.descricao, l.valor,
+            return new LancamentoResponse(l.id, l.dataCompra, l.descricao,
+                    l.descricaoNormalizada, null, l.valor,
                     l.portadorNome, l.final4, l.parcelaAtual, l.parcelaTotal, l.tipo,
                     l.responsavel == null ? null : l.responsavel.getId(),
                     l.responsavel == null ? null : l.responsavel.nome,
                     l.origemAtribuicao,
                     l.responsavel != null && l.responsavel.getId().equals(usuarioId),
-                    null, List.of(), null);
+                    null, List.of(), null, false);
         }
 
         /** Anexa as partes e diz qual delas é de quem está olhando. */
@@ -121,22 +131,48 @@ public final class Responses {
                     .map(ParteResponse::valor)
                     .findFirst()
                     .orElse(mapeadas.isEmpty() && Boolean.TRUE.equals(meu) ? valor : null);
-            return new LancamentoResponse(id, dataCompra, descricao, valor, portadorNome,
+            return new LancamentoResponse(id, dataCompra, descricao, descricaoNormalizada,
+                    apelido, valor, portadorNome,
                     final4, parcelaAtual, parcelaTotal, tipo, responsavelId, responsavelNome,
-                    origemAtribuicao, meu || minha != null, minha, mapeadas, disputantes);
+                    origemAtribuicao, meu || minha != null, minha, mapeadas, disputantes,
+                    jaFoiSeu);
         }
 
         /** Usado no bloco de encargos, onde a fatia vem do rateio e não de uma divisão. */
         public LancamentoResponse comMinhaParte(BigDecimal parte) {
-            return new LancamentoResponse(id, dataCompra, descricao, valor, portadorNome,
+            return new LancamentoResponse(id, dataCompra, descricao, descricaoNormalizada,
+                    apelido, valor, portadorNome,
                     final4, parcelaAtual, parcelaTotal, tipo, responsavelId, responsavelNome,
-                    origemAtribuicao, meu, parte, divisao, disputantes);
+                    origemAtribuicao, meu, parte, divisao, disputantes, jaFoiSeu);
         }
 
         public LancamentoResponse comDisputantes(List<String> nomes) {
-            return new LancamentoResponse(id, dataCompra, descricao, valor, portadorNome,
+            return new LancamentoResponse(id, dataCompra, descricao, descricaoNormalizada,
+                    apelido, valor, portadorNome,
                     final4, parcelaAtual, parcelaTotal, tipo, responsavelId, responsavelNome,
-                    origemAtribuicao, meu, minhaParte, divisao, nomes);
+                    origemAtribuicao, meu, minhaParte, divisao, nomes, jaFoiSeu);
+        }
+
+        /**
+         * Aplica o apelido do estabelecimento, quando existe um.
+         *
+         * <p>A descrição original continua indo junto: é ela que casa com o
+         * extrato do banco quando alguém for conferir, e é ela que permite
+         * depurar o parser.
+         */
+        public LancamentoResponse comApelido(String nome) {
+            return new LancamentoResponse(id, dataCompra, descricao, descricaoNormalizada,
+                    nome, valor, portadorNome,
+                    final4, parcelaAtual, parcelaTotal, tipo, responsavelId, responsavelNome,
+                    origemAtribuicao, meu, minhaParte, divisao, disputantes, jaFoiSeu);
+        }
+
+        /** Marca "você já comprou aqui antes" — só vale para quem está olhando. */
+        public LancamentoResponse comHistorico(boolean conhecido) {
+            return new LancamentoResponse(id, dataCompra, descricao, descricaoNormalizada,
+                    apelido, valor, portadorNome,
+                    final4, parcelaAtual, parcelaTotal, tipo, responsavelId, responsavelNome,
+                    origemAtribuicao, meu, minhaParte, divisao, disputantes, conhecido);
         }
 
         /**
@@ -144,9 +180,19 @@ public final class Responses {
          * era antes, e esconder isso evita influenciar a reivindicação.
          */
         public LancamentoResponse anonimo() {
-            return new LancamentoResponse(id, dataCompra, descricao, valor, portadorNome,
+            return new LancamentoResponse(id, dataCompra, descricao, descricaoNormalizada,
+                    apelido, valor, portadorNome,
                     final4, parcelaAtual, parcelaTotal, tipo, null, null, null, false,
-                    null, List.of(), null);
+                    null, List.of(), null, jaFoiSeu);
+        }
+    }
+
+    /** Um apelido de estabelecimento, para a tela de manutenção do admin. */
+    public record ApelidoResponse(Long id, String descricaoNormalizada, String apelido,
+                                  LocalDateTime atualizadoEm, String atualizadoPor) {
+        public static ApelidoResponse de(br.com.jcard.model.ApelidoEstabelecimento a) {
+            return new ApelidoResponse(a.id, a.descricaoNormalizada, a.apelido, a.atualizadoEm,
+                    a.atualizadoPor == null ? null : a.atualizadoPor.nome);
         }
     }
 

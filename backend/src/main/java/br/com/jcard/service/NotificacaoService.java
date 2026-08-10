@@ -3,6 +3,7 @@ package br.com.jcard.service;
 import br.com.jcard.model.Acerto;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
+import br.com.jcard.model.StatusAcerto;
 import br.com.jcard.model.Usuario;
 import io.quarkus.mailer.Mail;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -121,6 +122,82 @@ public class NotificacaoService {
                 valor(l.valor), l.dataCompra, appUrl);
         dispatcher.enfileirar(Mail.withHtml(dono.email,
                 "JcardApp · uma parte da conta dividida foi recusada", corpo));
+    }
+
+    /**
+     * A avaliação foi reaberta: os valores voltaram a mudar.
+     *
+     * <p>É a operação que mais mexe em dinheiro já combinado — a pessoa pode ter
+     * aceitado (ou até pago) um total que agora vai ser recalculado. Avisar não
+     * é cortesia: sem o e-mail, o valor mudaria em silêncio.
+     */
+    public void avaliacaoReaberta(Fatura fatura, List<Acerto> afetados,
+                                  String motivo, int devolvidosAoPool) {
+        if (!habilitado) {
+            return;
+        }
+        String mes = fatura.competencia.format(MES);
+        String porque = motivo == null || motivo.isBlank()
+                ? "" : "<p>Motivo informado: <em>%s</em></p>".formatted(motivo);
+
+        for (Acerto a : afetados) {
+            Usuario u = a.usuario;
+            if (!u.recebeNotificacoes || u.email == null || u.email.isBlank()) {
+                continue;
+            }
+            String jaPagou = a.status == StatusAcerto.INFORMADO
+                    ? """
+                      <p><strong>Você já declarou o pagamento desta fatura.</strong> O comprovante
+                      continua registrado; se o seu total mudar, o administrador acerta a
+                      diferença com você.</p>
+                      """
+                    : "";
+            String corpo = """
+                    <p>Olá, %s!</p>
+                    <p>A fatura de <strong>%s</strong> voltou para <strong>avaliação</strong>:
+                    o administrador reabriu a indicação para corrigir a responsabilidade de
+                    algum lançamento.</p>
+                    %s
+                    <p>%d lançamento(s) voltaram para a lista de quem não tem dono. O seu
+                    total pode mudar, e o aceite anterior não vale mais — você vai conferir
+                    o valor de novo quando a fatura for conciliada.</p>
+                    %s
+                    <p><a href="%s">Conferir no JcardApp</a></p>
+                    """.formatted(primeiroNome(u.nome), mes, jaPagou, devolvidosAoPool,
+                    porque, appUrl);
+            dispatcher.enfileirar(Mail.withHtml(u.email,
+                    "JcardApp · a fatura de " + mes + " voltou para avaliação", corpo));
+        }
+    }
+
+    /**
+     * O admin colocou um lançamento no nome de alguém.
+     *
+     * <p>Atribuição mandatória sem aviso é cobrança silenciosa — exatamente o
+     * que o app existe para evitar. O e-mail diz também que dá para contestar
+     * enquanto a fatura estiver em avaliação.
+     */
+    public void atribuidoPeloAdmin(Lancamento l, Usuario dono, boolean haviaDisputa) {
+        if (!habilitado || dono == null || !dono.recebeNotificacoes
+                || dono.email == null || dono.email.isBlank()) {
+            return;
+        }
+        String abertura = haviaDisputa
+                ? "Mais de uma pessoa reivindicou este lançamento, e o administrador decidiu "
+                  + "que ele é seu:"
+                : "O administrador indicou que este lançamento é seu:";
+        String corpo = """
+                <p>Olá, %s!</p>
+                <p>%s</p>
+                <p><strong>%s</strong> — R$ %s em %s</p>
+                <p>Se não foi você, abra o app e use <strong>"não foi minha"</strong> enquanto
+                a fatura de %s estiver em avaliação: o lançamento volta para a lista de quem
+                não tem dono e o administrador é avisado.</p>
+                <p><a href="%s">Abrir o JcardApp</a></p>
+                """.formatted(primeiroNome(dono.nome), abertura, l.descricao, valor(l.valor),
+                l.dataCompra, l.fatura.competencia.format(MES), appUrl);
+        dispatcher.enfileirar(Mail.withHtml(dono.email,
+                "JcardApp · um lançamento foi atribuído a você", corpo));
     }
 
     /** Fatura conciliada: cada um recebe quanto ficou devendo. */

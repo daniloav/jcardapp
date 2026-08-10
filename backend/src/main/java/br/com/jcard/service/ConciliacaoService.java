@@ -46,6 +46,9 @@ public class ConciliacaoService {
     @Inject
     RateioService rateio;
 
+    @Inject
+    NotificacaoService notificacao;
+
     /**
      * Recalcula {@code valorLancado} e decide se a fatura pode seguir.
      * Idempotente: pode ser chamado a cada mudança.
@@ -141,7 +144,10 @@ public class ConciliacaoService {
         // responsável é justamente o que mantém o rateio valendo.
         List<Lancamento> orfaos = Lancamento.semResponsavel(fatura.id);
         for (Lancamento l : orfaos) {
-            l.atribuirA(titular, OrigemAtribuicao.ADMIN);
+            // Origem própria, e não ADMIN: é o que permite a reabertura devolver
+            // ao pool exatamente o que ficou com o titular por falta de dono,
+            // sem desfazer o que o admin decidiu arbitrando.
+            l.atribuirA(titular, OrigemAtribuicao.SOBRA_CONCILIACAO);
             l.persist();
         }
 
@@ -163,6 +169,85 @@ public class ConciliacaoService {
         fatura.persist();
         auditoria.registrar(porQuem, br.com.jcard.model.AcaoAuditoria.CONCILIAR, "Fatura", fatura.id,
                 orfaos.size() + " lançamento(s) sem dono atribuídos ao titular");
+        return fatura;
+    }
+
+    /**
+     * Devolve a fatura de {@code CONCILIADA} para {@code EM_AVALIACAO}.
+     *
+     * <p>É a saída para o erro mais fácil de cometer no app: marcar "foi minha"
+     * no lançamento errado. Enquanto a fatura está aberta, a própria pessoa
+     * desfaz com "não foi minha"; depois de conciliada ela não tinha saída
+     * nenhuma, e o admin só conseguia contornar reabrindo acertos.
+     *
+     * <p>O que acontece:
+     * <ul>
+     *   <li>o que ficou com o titular <b>por falta de dono</b> volta ao pool —
+     *       o que o admin arbitrou fica onde está;</li>
+     *   <li>quem já <b>aceitou</b> o valor tem o aceite anulado: aceitar é
+     *       concordar com um número, e o número volta a mudar;</li>
+     *   <li>quem já <b>declarou o pagamento</b> continua {@code INFORMADO} — o
+     *       dinheiro saiu e o comprovante é a prova disso. O valor devido dele
+     *       <i>é</i> recalculado, e a diferença vira assunto do admin: por isso
+     *       ele é avisado por e-mail, junto com a pessoa.</li>
+     * </ul>
+     *
+     * <p>Acerto já <b>confirmado</b> barra a operação. Ele nunca é recalculado
+     * (regra §5) e, congelado no meio de um rateio que mudou, faria a soma dos
+     * acertos deixar de reproduzir o total — a fatura ficaria impossível de
+     * conciliar de novo. O caminho, aí, é o admin reabrir aquele acerto antes,
+     * o que é uma decisão explícita sobre dinheiro já quitado.
+     */
+    @Transactional
+    public Fatura reabrirAvaliacao(Long faturaId, Usuario admin, String motivo) {
+        Fatura fatura = carregar(faturaId);
+        if (fatura.status == StatusFatura.FECHADA) {
+            throw new WebApplicationException(
+                    "Fatura fechada é o histórico do acerto e não volta para avaliação.", 409);
+        }
+        if (fatura.status != StatusFatura.CONCILIADA) {
+            throw new WebApplicationException(
+                    "Só uma fatura conciliada volta para avaliação — esta está "
+                    + fatura.status + ".", 409);
+        }
+
+        List<Acerto> confirmados = Acerto.list(
+                "fatura.id = ?1 and status = ?2", fatura.id, StatusAcerto.CONFIRMADO);
+        if (!confirmados.isEmpty()) {
+            String nomes = confirmados.stream().map(a -> a.usuario.nome)
+                    .reduce((a, b) -> a + ", " + b).orElse("");
+            throw new WebApplicationException(
+                    "Reabrir mudaria valores já quitados (" + nomes + "). Reabra o acerto "
+                    + "dessas pessoas antes — é uma decisão sobre dinheiro que já foi pago.",
+                    409);
+        }
+
+        List<Lancamento> sobras = Lancamento.sobrasDaConciliacao(fatura.id);
+        for (Lancamento l : sobras) {
+            l.liberar();
+            l.persist();
+        }
+
+        // O aceite vale para um valor; o valor volta a mudar, então ele cai.
+        List<Acerto> aceitos = Acerto.list(
+                "fatura.id = ?1 and status = ?2", fatura.id, StatusAcerto.ACEITO);
+        for (Acerto a : aceitos) {
+            a.status = StatusAcerto.ABERTO;
+            a.aceitoEm = null;
+            a.persist();
+        }
+
+        fatura.status = StatusFatura.EM_AVALIACAO;
+        fatura.persist();
+        recalcularAcertos(fatura.id);
+
+        List<Acerto> afetados = Acerto.daFatura(fatura.id);
+        notificacao.avaliacaoReaberta(fatura, afetados, motivo, sobras.size());
+        auditoria.registrar(admin, br.com.jcard.model.AcaoAuditoria.REABRIR_AVALIACAO,
+                "Fatura", fatura.id,
+                sobras.size() + " lançamento(s) devolvidos ao pool · "
+                + aceitos.size() + " aceite(s) anulados"
+                + (motivo == null || motivo.isBlank() ? "" : " · motivo: " + motivo));
         return fatura;
     }
 

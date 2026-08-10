@@ -35,6 +35,22 @@ public final class Requests {
     }
 
     /**
+     * Por que a fatura está voltando para avaliação.
+     *
+     * <p>Opcional para não travar a correção urgente, mas vai no e-mail de quem
+     * for afetado e na auditoria: é a operação que mais mexe em dinheiro já
+     * combinado, e "por que o meu valor mudou?" tem de ter resposta.
+     */
+    public record ReabrirAvaliacao(
+            @Size(max = 400) String motivo) {
+    }
+
+    public record Apelidar(
+            @NotBlank(message = "Informe o apelido do estabelecimento")
+            @Size(max = 120) String apelido) {
+    }
+
+    /**
      * As partes de uma conta rachada. A soma tem de reproduzir o valor do
      * lançamento — validado no {@code DivisaoService}, que é onde o valor real
      * do lançamento está disponível para comparar.

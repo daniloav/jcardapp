@@ -50,6 +50,15 @@ export class ApiService {
     return this.http.post<Fatura>(`/api/faturas/${id}/fechar`, {});
   }
 
+  /**
+   * Devolve a fatura conciliada para avaliação. O motivo vai no e-mail de quem
+   * for afetado: é a operação que mais mexe em dinheiro já combinado.
+   */
+  reabrirAvaliacao(id: number, motivo?: string): Observable<Fatura> {
+    return this.http.post<Fatura>(
+      `/api/faturas/${id}/reabrir-avaliacao`, { motivo: motivo ?? null });
+  }
+
   excluirFatura(id: number): Observable<void> {
     return this.http.delete<void>(`/api/faturas/${id}`);
   }
@@ -86,6 +95,18 @@ export class ApiService {
 
   juntarDivisao(lancamentoId: number): Observable<Lancamento> {
     return this.http.delete<Lancamento>(`/api/lancamentos/${lancamentoId}/divisao`);
+  }
+
+  /**
+   * Batiza o estabelecimento deste lançamento. Vale para todo mundo e para as
+   * faturas seguintes — a chave é a loja, não o lançamento.
+   */
+  apelidar(lancamentoId: number, apelido: string): Observable<unknown> {
+    return this.http.post(`/api/lancamentos/${lancamentoId}/apelido`, { apelido });
+  }
+
+  removerApelido(lancamentoId: number): Observable<void> {
+    return this.http.delete<void>(`/api/lancamentos/${lancamentoId}/apelido`);
   }
 
   // -------------------------------------------------------------- acertos --

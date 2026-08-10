@@ -1,11 +1,13 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
-import { Component, Input, inject, signal } from '@angular/core';
+import { Component, Input, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ToastService } from '../core/toast.service';
-import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from '../core/models';
+import {
+  Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela, nomeDoLancamento,
+} from '../core/models';
 
 /** Conciliação: conflitos para arbitrar, fechamento e confirmação de pagamentos. */
 @Component({
@@ -53,7 +55,7 @@ import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from 
           @for (l of conflitos(); track l.id) {
             <div class="lancamento">
               <div>
-                <div class="desc">{{ limpa(l) }}</div>
+                <div class="desc">{{ nome(l) }}</div>
                 <div class="meta">
                   {{ l.dataCompra | date: 'dd/MM' }} · disputam:
                   {{ (l.disputantes ?? []).join(', ') }}
@@ -169,6 +171,28 @@ import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from 
         }
       </div>
 
+      <!-- ------------------------------------------- voltar para avaliação -- -->
+      @if (d.fatura.status === 'CONCILIADA') {
+        <h2>Voltar para avaliação</h2>
+        <div class="cartao">
+          <p class="meta">
+            Para quando alguém marcou o lançamento errado e só percebeu depois da
+            conciliação. Os lançamentos que ficaram com o titular por falta de dono
+            voltam para a lista de quem não tem dono, os aceites são anulados e todo
+            mundo que tem acerto nesta fatura recebe e-mail. O que você arbitrou
+            continua onde está, e quem já declarou o pagamento segue como está.
+          </p>
+          <label for="motivo">
+            Motivo (vai no e-mail e na auditoria)
+            <input id="motivo" type="text" maxlength="400" name="motivo"
+                   [(ngModel)]="motivo"
+                   placeholder="ex.: a farmácia era da Maria, não do João">
+          </label>
+          <button type="button" class="btn-perigo" [disabled]="reabrindo()"
+                  (click)="reabrirAvaliacao()">Voltar para avaliação</button>
+        </div>
+      }
+
       @if (d.fatura.status !== 'FECHADA') {
         <h2>Excluir</h2>
         <div class="cartao">
@@ -183,6 +207,17 @@ import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from 
       }
 
       <h2>Todos os lançamentos ({{ d.lancamentos.length }})</h2>
+      <p class="sub">
+        Com a fatura em avaliação dá para dizer de quem é um lançamento que ninguém
+        assumiu. A pessoa recebe e-mail e pode devolver ao pool com "não foi minha"
+        enquanto a fatura estiver aberta — atribuir sem aviso seria cobrança silenciosa.
+      </p>
+      <label class="campo-busca" for="filtro-lancamentos">
+        Procurar
+        <input id="filtro-lancamentos" type="search" name="filtro"
+               [ngModel]="filtro()" (ngModelChange)="filtro.set($event)"
+               placeholder="parte do nome ou da pessoa">
+      </label>
       <div class="rolavel">
         <table>
           <thead>
@@ -190,13 +225,16 @@ import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from 
                 <th>Responsável</th><th class="num">Valor</th></tr>
           </thead>
           <tbody>
-            @for (l of d.lancamentos; track l.id) {
+            @for (l of lancamentosFiltrados(); track l.id) {
               <tr>
                 <td>{{ l.dataCompra | date: 'dd/MM' }}</td>
                 <td>
-                  {{ limpa(l) }}
+                  {{ nome(l) }}
                   @if (l.parcelaTotal) {
                     <span class="tag">{{ l.parcelaAtual }}/{{ l.parcelaTotal }}</span>
+                  }
+                  @if (l.apelido) {
+                    <div class="meta original">na fatura: {{ limpa(l) }}</div>
                   }
                 </td>
                 <td>{{ l.final4 ?? '—' }}</td>
@@ -214,6 +252,32 @@ import { Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela } from 
                     {{ l.responsavelNome ?? '—' }}
                     @if (l.origemAtribuicao === 'HERDADA_PARCELA') {
                       <span class="tag info">herdada</span>
+                    }
+                    @if (l.origemAtribuicao === 'ADMIN') {
+                      <span class="tag info">você atribuiu</span>
+                    }
+                    @if (l.origemAtribuicao === 'SOBRA_CONCILIACAO') {
+                      <span class="tag">ninguém assumiu</span>
+                    }
+
+                    @if (podeAtribuir(l)) {
+                      <div class="atribuir">
+                        <select [ngModel]="escolha[l.id] ?? null"
+                                (ngModelChange)="escolha[l.id] = $event"
+                                [attr.aria-label]="'Atribuir ' + l.descricao + ' a'"
+                                name="dono{{ l.id }}">
+                          <option [ngValue]="null">
+                            {{ l.responsavelNome ? 'Passar para…' : 'Foi de quem?' }}
+                          </option>
+                          @for (u of utilizadores(); track u.id) {
+                            <option [ngValue]="u.id">{{ u.nome }}</option>
+                          }
+                        </select>
+                        <button type="button" class="btn-secundario"
+                                [disabled]="!escolha[l.id]" (click)="atribuir(l)">
+                          Atribuir
+                        </button>
+                      </div>
                     }
                   }
                 </td>
@@ -237,7 +301,10 @@ export class AdminFaturaComponent {
   conflitos = signal<Lancamento[]>([]);
   utilizadores = signal<Usuario[]>([]);
   excluindo = signal(false);
+  reabrindo = signal(false);
+  filtro = signal('');
   escolha: Record<number, number | null> = {};
+  motivo = '';
 
   private faturaId = 0;
 
@@ -246,12 +313,36 @@ export class AdminFaturaComponent {
     this.carregar();
   }
 
+  /** A busca é sobre a lista inteira: 514 linhas não se percorrem com o olho. */
+  lancamentosFiltrados = computed<Lancamento[]>(() => {
+    const termo = this.filtro().trim().toLowerCase();
+    const todos = this.detalhe()?.lancamentos ?? [];
+    if (!termo) {
+      return todos;
+    }
+    return todos.filter((l) =>
+      `${l.apelido ?? ''} ${l.descricao} ${l.responsavelNome ?? ''}`
+        .toLowerCase().includes(termo));
+  });
+
   somaAcertos(): number {
     return (this.detalhe()?.acertos ?? []).reduce((s, a) => s + a.valorDevido, 0);
   }
 
   limpa(l: Lancamento): string {
     return descricaoSemParcela(l);
+  }
+
+  nome(l: Lancamento): string {
+    return nomeDoLancamento(l);
+  }
+
+  /**
+   * Encargo não se atribui (é de todo mundo que usou), e fora da avaliação o
+   * backend recusa — é a mesma regra que impede mexer numa fatura conciliada.
+   */
+  podeAtribuir(l: Lancamento): boolean {
+    return this.detalhe()?.fatura.status === 'EM_AVALIACAO' && !this.rateado(l);
   }
 
   rotuloAcerto(s: string): string {
@@ -306,6 +397,50 @@ export class AdminFaturaComponent {
     }
     this.api.arbitrar(l.id, vencedor).subscribe({
       next: () => { this.toast.ok('Conflito resolvido.'); this.carregar(); },
+    });
+  }
+
+  /**
+   * Atribuir um lançamento que ninguém reivindicou. Usa o mesmo `arbitrar` do
+   * conflito — a diferença é só não haver disputa —, e a pessoa é avisada por
+   * e-mail de que a conta entrou no nome dela.
+   */
+  atribuir(l: Lancamento): void {
+    const dono = this.escolha[l.id];
+    if (!dono) {
+      return;
+    }
+    const nome = this.utilizadores().find((u) => u.id === dono)?.nome ?? 'a pessoa';
+    this.api.arbitrar(l.id, dono).subscribe({
+      next: () => {
+        this.escolha[l.id] = null;
+        this.toast.ok(`Lançamento atribuído a ${nome} — avisamos por e-mail.`);
+        this.carregar();
+      },
+    });
+  }
+
+  /**
+   * Devolve a fatura para avaliação. Confirma antes: mexe em valores que as
+   * pessoas já conferiram, e para algumas o total vai mudar.
+   */
+  reabrirAvaliacao(): void {
+    const ok = confirm(
+      'Voltar esta fatura para avaliação?\n\n'
+      + 'Os aceites são anulados, o que ficou com o titular por falta de dono volta '
+      + 'ao pool e todo mundo com acerto nesta fatura recebe e-mail.');
+    if (!ok) {
+      return;
+    }
+    this.reabrindo.set(true);
+    this.api.reabrirAvaliacao(this.faturaId, this.motivo).subscribe({
+      next: () => {
+        this.toast.ok('Fatura de volta em avaliação. As pessoas foram avisadas.');
+        this.motivo = '';
+        this.reabrindo.set(false);
+        this.carregar();
+      },
+      error: () => this.reabrindo.set(false),
     });
   }
 

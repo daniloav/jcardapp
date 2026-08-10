@@ -12,6 +12,8 @@ public enum AcaoAuditoria {
     DIVIDIR,
     ARBITRAR,
     CONCILIAR,
+    REABRIR_AVALIACAO,
+    APELIDAR,
     FECHAR_FATURA,
     ACEITAR_VALOR,
     INFORMAR_PAGAMENTO,
