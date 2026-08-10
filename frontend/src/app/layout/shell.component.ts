@@ -38,6 +38,11 @@ import { ToastService } from '../core/toast.service';
       @for (t of toast.toasts(); track t.id) {
         <div class="toast" [class.erro]="t.tipo === 'erro'">
           <span>{{ t.texto }}</span>
+          @if (t.acao; as a) {
+            <button type="button" class="btn-desfazer" (click)="toast.executar(t)">
+              {{ a.texto }}
+            </button>
+          }
           <button type="button" (click)="toast.fechar(t.id)" aria-label="Fechar aviso">×</button>
         </div>
       }

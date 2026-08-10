@@ -130,6 +130,66 @@ h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
   .valor.credito { color: var(--ok); }
 }
 
+/* ------------------------------------------------------ filtros do pool -- */
+
+/* Numa fatura real são 514 lançamentos: sem busca e faixa de data a lista é
+   impraticável no celular, que é onde as pessoas usam o app. */
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+
+  label { margin: 0; flex: 1 1 8rem; font-size: 0.85rem; }
+  /* a busca ganha o dobro do espaço: é o filtro que resolve o caso comum */
+  .campo-busca { flex: 2 1 14rem; }
+}
+
+.filtros-rapidos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+
+  label { margin: 0; font-weight: 500; display: flex; align-items: center; }
+}
+
+/* Cabeçalho de um bloco do pool (um dia ou uma loja), com o subtotal. */
+.grupo-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
+  border-bottom: 2px solid var(--borda);
+
+  .valor { font-variant-numeric: tabular-nums; color: var(--texto-suave); }
+}
+
+/* O nome que o banco imprime, embaixo do apelido: é ele que casa com o extrato. */
+.original { font-style: italic; }
+
+.editor-apelido {
+  background: #f7f9fb;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 0.9rem;
+  margin: 0 0 0.75rem;
+}
+
+/* O seletor de dono na lista do admin, dentro da célula da tabela. */
+.atribuir {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.4rem;
+
+  select { margin: 0; min-width: 9rem; }
+}
+
 /* --------------------------------------------------------- conta dividida -- */
 
 /* As partes de uma conta rachada, abaixo da descrição do lançamento. */
@@ -312,6 +372,16 @@ table {
   &.erro { background: var(--erro); }
 
   button { background: none; border: 0; color: inherit; font-size: 1.2rem; padding: 0 0.2rem; }
+
+  /* O "desfazer": precisa parecer clicável no meio de um aviso escuro, sem
+     roubar a leitura do texto. */
+  .btn-desfazer {
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-decoration: underline;
+    white-space: nowrap;
+    padding: 0 0.2rem;
+  }
 }
 
 /* --------------------------------------------------------------- avisos -- */

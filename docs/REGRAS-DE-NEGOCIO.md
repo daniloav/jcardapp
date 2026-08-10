@@ -136,12 +136,21 @@ decide uma cobrança contestada. O admin é notificado por e-mail.
 
 `ReivindicacaoService.reivindicar` · teste `segundaReivindicacaoViraConflito`
 
-### 3.4 O admin arbitra
+### 3.4 O admin arbitra — e também atribui sem disputa
 
 A decisão marca o vencedor como `ACEITA`, os demais como `REJEITADA`, atribui com
 origem `ADMIN` e cria o compromisso se for parcelado.
 
-`ReivindicacaoService.arbitrar` · teste `adminArbitra`
+A mesma operação serve para o lançamento que **ninguém** reivindicou ("isso foi
+do João"): sem ela, a única saída para o lançamento parado no pool era conciliar
+e deixá-lo cair no titular. Nos dois casos a pessoa **recebe e-mail** e pode
+devolver ao pool com "não foi minha" enquanto a fatura estiver em avaliação —
+atribuição mandatória sem aviso é cobrança silenciosa, e a regra §3.3 ("quem
+chegou primeiro nunca decide uma cobrança contestada") vale igual para "o admin
+decidiu".
+
+`ReivindicacaoService.arbitrar` · `NotificacaoService.atribuidoPeloAdmin` ·
+testes `adminArbitra`, `adminAtribuiSemDisputa`, `atribuicaoDoAdminEContestavel`
 
 ### 3.5 Encargos não se reivindicam nem se arbitram
 
@@ -179,15 +188,42 @@ pertencia à atribuição que está sendo discutida.
 
 ### 3.8 Só dá para mexer com a fatura em avaliação
 
-Fora de `EM_AVALIACAO`, reivindicar, desistir e dividir respondem 409.
+Fora de `EM_AVALIACAO`, reivindicar, desistir e dividir respondem 409. Quando o
+engano só aparece depois disso, a saída é o admin **reabrir a avaliação** (§4.2).
 
 `ReivindicacaoService.buscarReivindicavel` · `DivisaoService.carregarDivisivel`
+
+### 3.9 O estabelecimento pode ganhar apelido
+
+`DL*UberRides` vira `Uber`. O apelido é gravado pela **descrição normalizada** —
+a mesma chave que casa a compra parcelada entre faturas —, então vale para os
+meses seguintes; a descrição original continua na tela e na API, porque é ela que
+casa com o extrato do banco.
+
+Vale para **todo mundo**, não por pessoa: quem apelida está descrevendo a loja,
+não registrando uma preferência. Por isso qualquer utilizador apelida (quem
+reconhece a loja é quem comprou nela) e toda alteração vai para a auditoria.
+
+`ApelidoService` · `ApelidoEstabelecimento` · testes
+`apelidoValeParaOsProximosMeses`, `apelidarDeNovoSubstitui`, `removerApelido`
+
+### 3.10 O pool lembra onde a pessoa já comprou
+
+Cada lançamento sem dono vem com `jaFoiSeu`: quem está olhando já assumiu compra
+naquela mesma loja em **outra** fatura. A maior parte das compras se repete, e
+isso transforma leitura em conferência. É calculado por utilizador e nunca expõe
+o histórico de outra pessoa.
+
+`Lancamento.estabelecimentosDe` · testes `historicoEPessoal`,
+`historicoIgnoraAFaturaAtual`
 
 ## 4. Ciclo da fatura
 
 ```
 IMPORTADA ──┬─► DIVERGENTE (soma não fecha; trava aqui)
             └─► EM_AVALIACAO ──► CONCILIADA ──► FECHADA
+                      ▲               │
+                      └── reabrir ────┘  (só o admin, §4.2)
 ```
 
 - **EM_AVALIACAO** — utilizadores reivindicam e dividem; os acertos são
@@ -213,6 +249,35 @@ apagado explicitamente.
 
 `FaturaImportService.excluir` · testes `excluirFaturaLimpaTudo`,
 `faturaFechadaNaoEExcluida`, `excluirFatura` (HTTP)
+
+### 4.2 Voltar de CONCILIADA para EM_AVALIACAO
+
+Marcar "foi minha" no lançamento errado é o engano mais fácil do app — a lista é
+longa, os nomes são parecidos e o botão é grande. Enquanto a fatura está aberta a
+própria pessoa desfaz; depois de conciliada ela não tinha saída nenhuma.
+
+O admin reabre, e então:
+
+- o que ficou com o titular **por falta de dono** volta ao pool (origem
+  `SOBRA_CONCILIACAO`, criada só para permitir essa distinção); o que o admin
+  **arbitrou** fica onde está — era uma decisão, não um padrão;
+- os acertos `ACEITO` voltam a `ABERTO`: aceitar é concordar com um número, e o
+  número volta a mudar;
+- quem já declarou o pagamento segue `INFORMADO`, com o comprovante — o dinheiro
+  saiu. O valor devido dele **é** recalculado, e a diferença é assunto do admin;
+- todo mundo com acerto na fatura recebe e-mail, com o motivo informado, e a ação
+  vai para a auditoria. Sem isso o valor mudaria em silêncio.
+
+Acerto **`CONFIRMADO` barra a operação** (409). Ele nunca é recalculado (§5) e,
+congelado no meio de um rateio que mudou, faria a soma dos acertos deixar de
+reproduzir o total — a fatura ficaria impossível de conciliar de novo. O caminho
+é reabrir aquele acerto antes, que é uma decisão explícita sobre dinheiro já
+quitado. Fatura `FECHADA` também não volta: ela é o histórico do acerto.
+
+`ConciliacaoService.reabrirAvaliacao` · `NotificacaoService.avaliacaoReaberta` ·
+testes `reabrirDevolveAsSobrasAoPool`, `reabrirPreservaAArbitragem`,
+`reabrirAnulaOAceite`, `reabrirPreservaOPagamentoInformado`,
+`reabrirComAcertoConfirmadoERecusado`, `reabrirCorrigirEConciliarDeNovo`
 
 ## 5. Quitação
 
@@ -269,6 +334,8 @@ a operação que o disparou.
 | Fatura importada (e não divergente) | todos os utilizadores ativos |
 | Lançamentos ainda sem dono (diário, 12h BRT) | utilizadores ativos |
 | Conflito para arbitrar | admins |
+| Lançamento atribuído pelo admin | quem recebeu o lançamento |
+| Fatura de volta em avaliação | todos com acerto na fatura |
 | Parte de conta dividida recusada | quem organizou a divisão |
 | Pagamento declarado (com comprovante) | admins |
 | Pagamento confirmado | o utilizador |

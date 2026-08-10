@@ -3,6 +3,7 @@ package br.com.jcard.resource;
 import br.com.jcard.dto.Requests;
 import br.com.jcard.dto.Responses;
 import br.com.jcard.model.Acerto;
+import br.com.jcard.model.ApelidoEstabelecimento;
 import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
@@ -35,6 +36,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
@@ -131,10 +133,12 @@ public class FaturaResource {
     public Map<String, Object> detalhe(@PathParam("id") Long id) {
         Fatura f = buscar(id);
         Usuario eu = logado.get();
+        Map<String, String> apelidos = ApelidoEstabelecimento.mapa();
         return Map.of(
                 "fatura", resumo(f),
                 "lancamentos", Lancamento.daFatura(id).stream()
                         .map(l -> Responses.LancamentoResponse.de(l, eu.id)
+                                .comApelido(apelidos.get(l.descricaoNormalizada))
                                 .comDivisao(DivisaoLancamento.doLancamento(l.id), eu.id))
                         .toList(),
                 "acertos", Acerto.daFatura(id).stream()
@@ -158,13 +162,22 @@ public class FaturaResource {
     public Responses.MinhasContas minhasContas(@PathParam("id") Long id) {
         Fatura f = buscar(id);
         Usuario eu = logado.exigirSenhaTrocada();
+        Map<String, String> apelidos = ApelidoEstabelecimento.mapa();
+
+        // Onde esta pessoa já comprou em outras faturas. Uma consulta só, antes
+        // do laço: numa fatura de 514 linhas, perguntar por lançamento seria
+        // 514 consultas para responder a mesma pergunta.
+        Set<String> conhecidos = Lancamento.estabelecimentosDe(eu.id, id);
 
         List<Responses.LancamentoResponse> pool = Lancamento.poolDaFatura(id).stream()
-                .map(l -> Responses.LancamentoResponse.de(l, eu.id).anonimo())
+                .map(l -> Responses.LancamentoResponse.de(l, eu.id).anonimo()
+                        .comApelido(apelidos.get(l.descricaoNormalizada))
+                        .comHistorico(conhecidos.contains(l.descricaoNormalizada)))
                 .toList();
 
         List<Responses.LancamentoResponse> meus = Lancamento.deUsuarioNaFatura(id, eu.id).stream()
                 .map(l -> Responses.LancamentoResponse.de(l, eu.id)
+                        .comApelido(apelidos.get(l.descricaoNormalizada))
                         .comDivisao(DivisaoLancamento.doLancamento(l.id), eu.id))
                 .toList();
         BigDecimal totalCompras = meus.stream()
@@ -182,6 +195,7 @@ public class FaturaResource {
         List<Responses.LancamentoResponse> encargos = Lancamento.encargosDaFatura(id).stream()
                 .filter(l -> meusEncargos.containsKey(l.id))
                 .map(l -> Responses.LancamentoResponse.de(l, eu.id)
+                        .comApelido(apelidos.get(l.descricaoNormalizada))
                         .comMinhaParte(meusEncargos.get(l.id)))
                 .toList();
         BigDecimal totalEncargos = encargos.stream()
@@ -231,6 +245,25 @@ public class FaturaResource {
     @Transactional
     public Responses.FaturaResponse conciliar(@PathParam("id") Long id) {
         return resumo(conciliacao.conciliar(id, logado.get()));
+    }
+
+    /**
+     * Devolve a fatura conciliada para avaliação — a saída para o "marquei o
+     * lançamento errado" descoberto tarde demais.
+     *
+     * <p>Mexe em valor já combinado: os aceites caem, quem for afetado recebe
+     * e-mail e a ação vai para a auditoria com o motivo. Acerto já confirmado
+     * barra a operação — ver {@code ConciliacaoService.reabrirAvaliacao}.
+     */
+    @POST
+    @Path("/{id}/reabrir-avaliacao")
+    @RolesAllowed(TokenService.ADMIN)
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Transactional
+    public Responses.FaturaResponse reabrirAvaliacao(@PathParam("id") Long id,
+                                                     Requests.ReabrirAvaliacao req) {
+        return resumo(conciliacao.reabrirAvaliacao(id, logado.get(),
+                req == null ? null : req.motivo()));
     }
 
     @POST

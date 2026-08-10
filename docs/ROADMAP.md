@@ -4,8 +4,9 @@ O que ficou para depois, e por quê. Cada item diz **o problema** antes da
 solução — a ideia é que daqui a três meses dê para lembrar o motivo, não só a
 tarefa.
 
-Ordem = prioridade. O bloco 1 é dívida da entrega da conta dividida; o bloco 2 é
-o que o Danilo pediu para melhorar no fluxo de indicação.
+Ordem = prioridade. O bloco 1 é dívida da entrega da conta dividida; o bloco 2 —
+o fluxo de indicação — **foi entregue**, e ficou registrado aqui com as decisões
+que ele exigiu, porque são elas que explicam o código.
 
 ---
 
@@ -42,72 +43,70 @@ subir, conferir os valores antes de cobrar. Fatura `FECHADA` não é afetada
 
 ---
 
-## 2. Fluxo de indicação (pedido do Danilo)
+## 2. Fluxo de indicação (pedido do Danilo) — ✅ entregue
 
-O ponto em comum dos quatro: hoje a indicação é boa para quem já entendeu o app,
-e áspera para quem abre pela primeira vez no celular no fim do mês.
+O ponto em comum dos quatro: a indicação era boa para quem já entendeu o app, e
+áspera para quem abre pela primeira vez no celular no fim do mês.
 
-### 2.1 Desfazer uma indicação feita por engano
+Migration `V3__reabertura_e_apelidos.sql`. As regras estão em
+`REGRAS-DE-NEGOCIO.md` §3.4, §3.9, §3.10 e §4.2; aqui fica **o que foi decidido**
+em cada ponto que o item deixou em aberto.
 
-**Problema**: marcar "foi minha" no lançamento errado é o erro mais fácil de
-cometer — a lista é longa, os nomes de estabelecimento são parecidos e o botão é
-grande. Hoje dá para devolver ao pool com "não foi minha", **mas só enquanto a
-fatura está em `EM_AVALIACAO`**. Depois de conciliada, o utilizador não tem saída
-nenhuma: precisa falar com o admin, que só consegue resolver reabrindo o acerto.
+### 2.1 Desfazer uma indicação feita por engano — ✅
 
-**Ideia**: um caminho explícito de "voltar ao estágio de indicação" —
-provavelmente uma ação do admin que devolve a fatura de `CONCILIADA` para
-`EM_AVALIACAO`, recalculando os acertos e anulando os aceites (quem já pagou
-fica como está, como na regra §5). Precisa decidir o que acontece com acerto
-`INFORMADO` no meio do caminho.
+O admin devolve a fatura de `CONCILIADA` para `EM_AVALIACAO`
+(`ConciliacaoService.reabrirAvaliacao`, botão "Voltar para avaliação" na tela de
+conciliação). Três decisões que o item deixou em aberto:
 
-**Cuidado**: é a operação que mais mexe em dinheiro já combinado. Tem de ser
-auditada e avisar por e-mail quem for afetado.
+- **O que volta ao pool**: só o que ficou com o titular por falta de dono. Para
+  distinguir isso do que o admin arbitrou de propósito, a conciliação passou a
+  marcar essas sobras com a origem nova **`SOBRA_CONCILIACAO`** — antes as duas
+  eram `ADMIN` e ficavam indistinguíveis.
+- **Acerto `INFORMADO`** (a pergunta que ficou): **continua `INFORMADO`**, com o
+  comprovante. O dinheiro saiu; apagar isso seria negar o pagamento. O valor
+  devido dele é recalculado e a diferença é assunto do admin — por isso a pessoa
+  e o admin são avisados.
+- **Acerto `CONFIRMADO` barra a reabertura** (409). Ele nunca é recalculado, e
+  congelado no meio de um rateio que mudou faria a soma dos acertos deixar de
+  reproduzir o total: a fatura ficaria impossível de conciliar de novo. O admin
+  reabre aquele acerto antes — decisão explícita sobre dinheiro já pago.
 
-### 2.2 UX da página de indicação
+Auditada, com motivo, e e-mail para todo mundo com acerto na fatura.
 
-**Problema**: a tela lista o pool cru, na ordem da fatura. Numa fatura real são
-**514 lançamentos** — a lista fica impraticável no celular, que é onde as pessoas
-vão usar.
+### 2.2 UX da página de indicação — ✅
 
-**Ideias, em ordem de retorno**:
+No pool: **busca** (casa contra o apelido e contra o nome do banco), **faixa de
+data**, **agrupamento por dia ou por estabelecimento** com subtotal, filtros
+rápidos de "só parcelas" e "só onde já comprei", **parcela em destaque** (com o
+aviso de que a decisão vale para os meses seguintes) e **desfazer no próprio
+toast** depois de assumir — o engano do §2.1 deixa de precisar virar processo.
 
-- **busca por descrição** e filtro por faixa de data — resolve 80% do caso "sei
-  o que procuro";
-- **agrupar por dia**, com subtotal, em vez de uma lista contínua;
-- destacar o que é **parcela** (a decisão vale para os meses seguintes, então
-  merece mais atenção que uma compra avulsa);
-- **desfazer imediato** no toast depois de assumir, para o engano do §2.1 não
-  precisar virar processo;
-- lembrar o que a pessoa assumiu **no mês anterior** na mesma loja — a maior
-  parte das compras se repete, e isso transforma leitura em confirmação.
+O "já comprei aqui" vem do campo `jaFoiSeu`, calculado por utilizador contra as
+**outras** faturas (`Lancamento.estabelecimentosDe`): uma consulta por
+carregamento, não uma por lançamento — numa fatura de 514 linhas isso importa.
 
-### 2.3 Indicação melhor apresentada
+### 2.3 Indicação melhor apresentada — ✅
 
-**Problema**: o lançamento aparece como veio da fatura (`DL*UberRides`,
-`PARTMED E ODONTOCO`) — o nome que o banco imprime, não o que a pessoa lembra.
-Reconhecer a compra é o trabalho todo do app, e hoje ele é 100% do utilizador.
+**Apelido por estabelecimento**, chaveado pela descrição normalizada, então vale
+para os meses seguintes. Decisões:
 
-**Ideias**: apelido por estabelecimento (definido uma vez, reaproveitado sempre),
-mostrar o portador/final do cartão quando existir, e agrupar compras repetidas da
-mesma loja no mês.
+- é **global**, não por pessoa: quem apelida está descrevendo a loja;
+- **qualquer utilizador** apelida, não só o admin — quem reconhece a loja é quem
+  comprou nela —, e a alteração vai para a auditoria com o nome de quem fez;
+- a **descrição original continua na tela** ("na fatura: DL*UberRides"): é ela
+  que casa com o extrato do banco e que permite depurar o parser.
 
-### 2.4 Admin atribuir lançamento a alguém, de forma mandatória
+Também entraram o portador do cartão na linha do pool e o agrupamento de compras
+repetidas da mesma loja no mês (o modo "por estabelecimento").
 
-**Problema**: o `ReivindicacaoService.arbitrar` já atribui a quem o admin
-escolher — mas na tela ele **só aparece na fila de conflitos**. Se ninguém
-reivindicou um lançamento, o admin não tem como dizer "isso foi do João": a única
-saída hoje é conciliar e o lançamento cair no titular.
+### 2.4 Admin atribuir lançamento a alguém — ✅
 
-**Ideia**: ação de atribuir direto na lista "Todos os lançamentos" da tela de
-conciliação, usando o `arbitrar` que já existe (origem `ADMIN`), com o utilizador
-sendo notificado — atribuição mandatória sem aviso é cobrança silenciosa, que é
-justamente o que o app evita.
-
-**Decidir**: se o utilizador pode contestar depois. A regra §3.3 diz que "quem
-chegou primeiro" nunca decide cobrança contestada; a decisão do admin é o
-desempate, mas atribuir sem disputa nenhuma é outra coisa — provavelmente deveria
-ser contestável enquanto a fatura estiver aberta.
+Seletor de dono direto na lista "Todos os lançamentos", usando o `arbitrar` que
+já existia (origem `ADMIN`). Sobre a pergunta que ficou — se o utilizador pode
+contestar: **pode**, com "não foi minha", enquanto a fatura estiver em avaliação.
+Atribuir sem disputa não é um desempate; é o admin dizendo de quem é a conta, e
+a §3.3 vale igual para "o admin decidiu". A pessoa recebe e-mail dizendo
+exatamente isso.
 
 ---
 

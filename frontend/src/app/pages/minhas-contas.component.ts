@@ -1,11 +1,13 @@
 import { CurrencyPipe, DatePipe, LowerCasePipe } from '@angular/common';
-import { Component, Input, inject, signal } from '@angular/core';
+import { Component, Input, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ToastService } from '../core/toast.service';
-import { Lancamento, MinhasContas, Pessoa, descricaoSemParcela } from '../core/models';
+import {
+  Lancamento, MinhasContas, Pessoa, descricaoSemParcela, nomeDoLancamento,
+} from '../core/models';
 
 /** Uma linha do editor de divisão: pessoa marcada e quanto ela paga. */
 interface LinhaDivisao {
@@ -16,6 +18,22 @@ interface LinhaDivisao {
 }
 
 /**
+ * Um bloco do pool: um dia ou um estabelecimento, com subtotal.
+ *
+ * <p>Numa fatura real são 514 lançamentos. Lista contínua no celular é
+ * impraticável — o subtotal por bloco é o que deixa a pessoa conferir "esse dia
+ * inteiro foi meu" sem somar de cabeça.
+ */
+interface Grupo {
+  chave: string;
+  /** Preenchido no agrupamento por dia; a tela formata com o pipe de data. */
+  data: string | null;
+  titulo: string;
+  itens: Lancamento[];
+  subtotal: number;
+}
+
+/**
  * A tela principal do utilizador numa fatura, e onde o ciclo inteiro acontece:
  * assumir o que é seu, rachar o que foi dividido, ver a fatia dos encargos,
  * aceitar o total e declarar o pagamento.
@@ -23,6 +41,9 @@ interface LinhaDivisao {
  * <p>Mostra só o <b>pool</b> e o que é dele. O que outra pessoa assumiu não
  * aparece — decisão de privacidade do projeto. A exceção é a conta dividida:
  * os participantes se veem, porque estavam na mesma mesa.
+ *
+ * <p>O pool tem busca, faixa de data e agrupamento porque é onde o app é usado
+ * de verdade: no celular, no fim do mês, numa lista longa de nomes parecidos.
  */
 @Component({
   standalone: true,
@@ -132,35 +153,146 @@ interface LinhaDivisao {
       @if (d.pool.length === 0) {
         <p class="vazio">Nada pendente. Todas as compras já têm responsável.</p>
       } @else {
-        <div class="cartao">
-          @for (l of d.pool; track l.id) {
-            <div class="lancamento">
-              <div>
-                <div class="desc">{{ limpa(l) }}</div>
-                <div class="meta">
-                  {{ l.dataCompra | date: 'dd/MM' }}
-                  @if (l.parcelaTotal) {
-                    · parcela {{ l.parcelaAtual }}/{{ l.parcelaTotal }}
-                  }
-                  @if (l.final4) { · final {{ l.final4 }} }
-                </div>
-                @if (l.parcelaTotal && l.parcelaAtual === 1) {
-                  <div class="meta">
-                    Ao assumir, as {{ l.parcelaTotal! - 1 }} parcelas seguintes
-                    já entram no seu nome.
-                  </div>
-                }
-              </div>
-              <div style="text-align:right">
-                <div class="valor" [class.credito]="l.valor < 0">
-                  {{ l.valor | currency: 'BRL' }}
-                </div>
-                <button type="button" [disabled]="ocupado() || !aberta()"
-                        (click)="assumir(l)">Foi minha</button>
-              </div>
-            </div>
+        <div class="filtros">
+          <label class="campo-busca" for="busca">
+            Procurar
+            <input id="busca" type="search" name="busca" [ngModel]="busca()"
+                   (ngModelChange)="busca.set($event)"
+                   placeholder="parte do nome da loja">
+          </label>
+          <label for="de">
+            De
+            <input id="de" type="date" name="de" [ngModel]="de()" (ngModelChange)="de.set($event)">
+          </label>
+          <label for="ate">
+            Até
+            <input id="ate" type="date" name="ate" [ngModel]="ate()"
+                   (ngModelChange)="ate.set($event)">
+          </label>
+          <label for="agrupar">
+            Agrupar
+            <select id="agrupar" name="agrupar" [ngModel]="agrupamento()"
+                    (ngModelChange)="agrupamento.set($event)">
+              <option value="dia">por dia</option>
+              <option value="loja">por estabelecimento</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="filtros-rapidos">
+          <label>
+            <input type="checkbox" name="soParcelas" [ngModel]="soParcelas()"
+                   (ngModelChange)="soParcelas.set($event)">
+            só parcelas
+          </label>
+          <label>
+            <input type="checkbox" name="soConhecidos" [ngModel]="soConhecidos()"
+                   (ngModelChange)="soConhecidos.set($event)">
+            só onde já comprei
+          </label>
+          @if (filtrando()) {
+            <button type="button" class="btn-texto" (click)="limparFiltros()">
+              limpar filtros
+            </button>
           }
         </div>
+
+        @if (poolFiltrado().length === 0) {
+          <p class="vazio">Nenhum lançamento sem dono bate com esses filtros.</p>
+        } @else {
+          <p class="sub">
+            {{ poolFiltrado().length }} de {{ d.pool.length }} ·
+            {{ somaFiltrada() | currency: 'BRL' }}
+          </p>
+
+          @for (g of grupos(); track g.chave) {
+            <div class="cartao">
+              <div class="grupo-cabecalho">
+                <strong>
+                  @if (g.data) {
+                    {{ g.data | date: 'dd/MM/yyyy' }}
+                  } @else {
+                    {{ g.titulo }}
+                    @if (g.itens.length > 1) {
+                      <span class="tag">{{ g.itens.length }} compras</span>
+                    }
+                  }
+                </strong>
+                <span class="valor">{{ g.subtotal | currency: 'BRL' }}</span>
+              </div>
+
+              @for (l of g.itens; track l.id) {
+                <div class="lancamento">
+                  <div>
+                    <div class="desc">
+                      {{ nome(l) }}
+                      @if (l.jaFoiSeu) {
+                        <span class="tag info" title="Você assumiu uma compra nesta loja em outra fatura">
+                          já foi sua
+                        </span>
+                      }
+                    </div>
+                    @if (l.apelido) {
+                      <div class="meta original">na fatura: {{ original(l) }}</div>
+                    }
+                    <div class="meta">
+                      {{ l.dataCompra | date: 'dd/MM' }}
+                      @if (l.portadorNome) { · {{ l.portadorNome }} }
+                      @if (l.final4) { · final {{ l.final4 }} }
+                    </div>
+                    @if (l.parcelaTotal) {
+                      <div class="meta">
+                        <span class="tag alerta">
+                          parcela {{ l.parcelaAtual }}/{{ l.parcelaTotal }}
+                        </span>
+                        @if (l.parcelaAtual === 1) {
+                          Ao assumir, as {{ l.parcelaTotal! - 1 }} parcelas seguintes
+                          já entram no seu nome nas próximas faturas.
+                        }
+                      </div>
+                    }
+                  </div>
+                  <div style="text-align:right">
+                    <div class="valor" [class.credito]="l.valor < 0">
+                      {{ l.valor | currency: 'BRL' }}
+                    </div>
+                    <button type="button" [disabled]="ocupado() || !aberta()"
+                            (click)="assumir(l)">Foi minha</button>
+                    <button type="button" class="btn-texto" (click)="abrirApelido(l)">
+                      {{ l.apelido ? 'renomear' : 'apelidar' }}
+                    </button>
+                  </div>
+                </div>
+
+                @if (apelidando()?.id === l.id) {
+                  <div class="editor-apelido">
+                    <label [attr.for]="'apelido' + l.id">
+                      Como vocês chamam esse lugar?
+                      <input [id]="'apelido' + l.id" type="text" maxlength="120"
+                             [name]="'apelido' + l.id" [(ngModel)]="novoApelido"
+                             placeholder="ex.: Uber">
+                    </label>
+                    <p class="meta">
+                      Na fatura vem como <strong>{{ original(l) }}</strong>. O apelido vale
+                      para todo mundo e para os próximos meses — é a mesma loja.
+                    </p>
+                    <div class="linha">
+                      <button type="button" [disabled]="ocupado() || !novoApelido.trim()"
+                              (click)="salvarApelido(l)">Salvar apelido</button>
+                      @if (l.apelido) {
+                        <button type="button" class="btn-secundario"
+                                (click)="removerApelido(l)">Voltar ao nome do banco</button>
+                      }
+                      <button type="button" class="btn-secundario" (click)="fecharApelido()">
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                }
+              }
+            </div>
+          }
+        }
       }
 
       <!-- --------------------------------------------------- minhas contas -- -->
@@ -172,7 +304,10 @@ interface LinhaDivisao {
           @for (l of d.meus; track l.id) {
             <div class="lancamento">
               <div>
-                <div class="desc">{{ limpa(l) }}</div>
+                <div class="desc">{{ nome(l) }}</div>
+                @if (l.apelido) {
+                  <div class="meta original">na fatura: {{ original(l) }}</div>
+                }
                 <div class="meta">
                   {{ l.dataCompra | date: 'dd/MM' }}
                   @if (l.parcelaTotal) {
@@ -218,7 +353,7 @@ interface LinhaDivisao {
             @if (dividindo()?.id === l.id) {
               <div class="editor-divisao">
                 <div class="linha">
-                  <strong>Dividir {{ limpa(l) }} · {{ l.valor | currency: 'BRL' }}</strong>
+                  <strong>Dividir {{ nome(l) }} · {{ l.valor | currency: 'BRL' }}</strong>
                   <button type="button" class="btn-secundario" (click)="igualmente(l)">
                     Dividir igualmente
                   </button>
@@ -278,7 +413,7 @@ interface LinhaDivisao {
           @for (l of d.encargos; track l.id) {
             <div class="lancamento">
               <div>
-                <div class="desc">{{ limpa(l) }}</div>
+                <div class="desc">{{ nome(l) }}</div>
                 <div class="meta">
                   {{ l.dataCompra | date: 'dd/MM' }} · {{ l.tipo | lowercase }} ·
                   total {{ l.valor | currency: 'BRL' }}
@@ -314,12 +449,102 @@ export class MinhasContasComponent {
   dividindo = signal<Lancamento | null>(null);
   linhas = signal<LinhaDivisao[]>([]);
 
+  /** Lançamento com o editor de apelido aberto. */
+  apelidando = signal<Lancamento | null>(null);
+  novoApelido = '';
+
+  // ------------------------------------------------------ filtros do pool --
+
+  busca = signal('');
+  de = signal('');
+  ate = signal('');
+  agrupamento = signal<'dia' | 'loja'>('dia');
+  soParcelas = signal(false);
+  soConhecidos = signal(false);
+
   pagoEm = new Date().toISOString().slice(0, 10);
   observacao = '';
   arquivo = signal<File | null>(null);
 
   @Input() set id(valor: string) {
     this.carregar(Number(valor));
+  }
+
+  /**
+   * O pool depois dos filtros.
+   *
+   * <p>A busca casa contra o apelido <b>e</b> contra o que o banco imprime:
+   * quem apelidou procura pelo apelido, quem tem o extrato na mão procura pelo
+   * nome original.
+   */
+  poolFiltrado = computed<Lancamento[]>(() => {
+    const termo = this.busca().trim().toLowerCase();
+    const de = this.de();
+    const ate = this.ate();
+    return (this.dados()?.pool ?? []).filter((l) => {
+      if (termo && !this.textoDe(l).includes(termo)) {
+        return false;
+      }
+      if (de && l.dataCompra < de) {
+        return false;
+      }
+      if (ate && l.dataCompra > ate) {
+        return false;
+      }
+      if (this.soParcelas() && !l.parcelaTotal) {
+        return false;
+      }
+      if (this.soConhecidos() && !l.jaFoiSeu) {
+        return false;
+      }
+      return true;
+    });
+  });
+
+  somaFiltrada = computed(() => this.soma(this.poolFiltrado()));
+
+  filtrando = computed(() =>
+    !!this.busca() || !!this.de() || !!this.ate() || this.soParcelas() || this.soConhecidos());
+
+  /**
+   * O pool em blocos: por dia (a ordem natural da fatura) ou por
+   * estabelecimento, que junta as compras repetidas da mesma loja no mês.
+   */
+  grupos = computed<Grupo[]>(() => {
+    const porLoja = this.agrupamento() === 'loja';
+    const mapa = new Map<string, Lancamento[]>();
+    for (const l of this.poolFiltrado()) {
+      const chave = porLoja ? l.descricaoNormalizada : l.dataCompra;
+      const itens = mapa.get(chave);
+      if (itens) {
+        itens.push(l);
+      } else {
+        mapa.set(chave, [l]);
+      }
+    }
+
+    const grupos: Grupo[] = [...mapa.entries()].map(([chave, itens]) => ({
+      chave,
+      data: porLoja ? null : chave,
+      titulo: porLoja ? this.nome(itens[0]) : chave,
+      itens,
+      subtotal: this.soma(itens),
+    }));
+
+    // Por loja, primeiro quem mais se repete: é onde agrupar rende mais.
+    // Por dia, a ordem da fatura, que é como a pessoa lembra das compras.
+    return porLoja
+      ? grupos.sort((a, b) => b.itens.length - a.itens.length
+          || a.titulo.localeCompare(b.titulo))
+      : grupos.sort((a, b) => a.chave.localeCompare(b.chave));
+  });
+
+  limparFiltros(): void {
+    this.busca.set('');
+    this.de.set('');
+    this.ate.set('');
+    this.soParcelas.set(false);
+    this.soConhecidos.set(false);
   }
 
   aberta(): boolean {
@@ -344,9 +569,14 @@ export class MinhasContasComponent {
       next: (atualizado) => {
         // Sem responsável na volta = outra pessoa também reivindicou; o backend
         // devolveu ao pool e chamou o admin. É importante a pessoa saber disso.
-        this.toast.ok(atualizado.responsavelId
-          ? 'Lançamento assumido.'
-          : 'Outra pessoa também marcou essa compra. O administrador vai decidir.');
+        // O desfazer no próprio aviso existe porque marcar a linha errada é o
+        // engano mais fácil do app — e corrigir agora custa um toque, enquanto
+        // corrigir depois da conciliação vira conversa com o administrador.
+        this.toast.ok(
+          atualizado.responsavelId
+            ? `"${this.nome(l)}" agora é sua.`
+            : 'Outra pessoa também marcou essa compra. O administrador vai decidir.',
+          { texto: 'Desfazer', executar: () => this.devolver(l) });
         this.recarregar();
       },
       error: () => this.ocupado.set(false),
@@ -357,6 +587,46 @@ export class MinhasContasComponent {
     this.ocupado.set(true);
     this.api.desistir(l.id).subscribe({
       next: () => { this.toast.ok('Lançamento devolvido ao pool.'); this.recarregar(); },
+      error: () => this.ocupado.set(false),
+    });
+  }
+
+  // ------------------------------------------------------------- apelido --
+
+  abrirApelido(l: Lancamento): void {
+    this.apelidando.set(l);
+    this.novoApelido = l.apelido ?? '';
+  }
+
+  fecharApelido(): void {
+    this.apelidando.set(null);
+    this.novoApelido = '';
+  }
+
+  salvarApelido(l: Lancamento): void {
+    const apelido = this.novoApelido.trim();
+    if (!apelido) {
+      return;
+    }
+    this.ocupado.set(true);
+    this.api.apelidar(l.id, apelido).subscribe({
+      next: () => {
+        this.toast.ok(`Agora essa loja aparece como "${apelido}".`);
+        this.fecharApelido();
+        this.recarregar();
+      },
+      error: () => this.ocupado.set(false),
+    });
+  }
+
+  removerApelido(l: Lancamento): void {
+    this.ocupado.set(true);
+    this.api.removerApelido(l.id).subscribe({
+      next: () => {
+        this.toast.ok('Apelido removido.');
+        this.fecharApelido();
+        this.recarregar();
+      },
       error: () => this.ocupado.set(false),
     });
   }
@@ -531,8 +801,22 @@ export class MinhasContasComponent {
 
   // --------------------------------------------------------------- apoio --
 
-  limpa(l: Lancamento): string {
+  /** O nome que a tela mostra: o apelido, quando a loja tem um. */
+  nome(l: Lancamento): string {
+    return nomeDoLancamento(l);
+  }
+
+  /** O que o banco imprimiu, para conferir contra o extrato. */
+  original(l: Lancamento): string {
     return descricaoSemParcela(l);
+  }
+
+  private textoDe(l: Lancamento): string {
+    return `${l.apelido ?? ''} ${l.descricao}`.toLowerCase();
+  }
+
+  private soma(ls: Lancamento[]): number {
+    return ls.reduce((s, l) => s + Math.round(l.valor * 100), 0) / 100;
   }
 
   rotuloOrigem(l: Lancamento): string {
@@ -541,6 +825,7 @@ export class MinhasContasComponent {
       HERDADA_PARCELA: 'herdada da 1ª parcela',
       REGRA_CARTAO: 'do seu cartão',
       ADMIN: 'definida pelo admin',
+      SOBRA_CONCILIACAO: 'ninguém assumiu — ficou com o titular',
     }[l.origemAtribuicao ?? 'MANUAL'];
   }
 

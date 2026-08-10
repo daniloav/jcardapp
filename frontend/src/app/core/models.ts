@@ -8,7 +8,8 @@ export type StatusAcerto = 'ABERTO' | 'ACEITO' | 'INFORMADO' | 'CONFIRMADO';
 export type TipoLancamento =
   | 'COMPRA' | 'ESTORNO' | 'ENCARGO' | 'PAGAMENTO' | 'IOF' | 'ANUIDADE' | 'AJUSTE';
 
-export type OrigemAtribuicao = 'MANUAL' | 'HERDADA_PARCELA' | 'REGRA_CARTAO' | 'ADMIN';
+export type OrigemAtribuicao =
+  | 'MANUAL' | 'HERDADA_PARCELA' | 'REGRA_CARTAO' | 'ADMIN' | 'SOBRA_CONCILIACAO';
 
 export interface Usuario {
   id: number;
@@ -61,6 +62,10 @@ export interface Lancamento {
   id: number;
   dataCompra: string;
   descricao: string;
+  /** A chave do estabelecimento — é por ela que o apelido é gravado. */
+  descricaoNormalizada: string;
+  /** O nome que a família deu à loja; null enquanto ninguém apelidou. */
+  apelido: string | null;
   valor: number;
   portadorNome: string | null;
   final4: string | null;
@@ -80,6 +85,12 @@ export interface Lancamento {
   divisao: Parte[];
   /** Só vem preenchido na fila de conflitos do admin. */
   disputantes: string[] | null;
+  /**
+   * Quem está olhando já assumiu compra nesta mesma loja em outra fatura. No
+   * pool vira "você comprou aqui no mês passado" — a maior parte das compras se
+   * repete, e isso transforma leitura em confirmação.
+   */
+  jaFoiSeu: boolean;
 }
 
 export interface Acerto {
@@ -148,4 +159,15 @@ export function descricaoSemParcela(l: Lancamento): string {
     return l.descricao;
   }
   return l.descricao.replace(/\s+\d{1,2}\s*\/\s*\d{1,2}\s*$/, '');
+}
+
+/**
+ * O nome que a tela mostra: o apelido, quando alguém já deu um à loja.
+ *
+ * <p>Reconhecer a compra é o trabalho todo do utilizador — "DL*UberRides" é o
+ * nome que o banco imprime, não o que a pessoa lembra. A descrição original
+ * continua acessível na linha, porque é ela que casa com o extrato.
+ */
+export function nomeDoLancamento(l: Lancamento): string {
+  return l.apelido ?? descricaoSemParcela(l);
 }

@@ -117,7 +117,20 @@ public class ReivindicacaoService {
         return l;
     }
 
-    /** Decisão do admin num conflito. Também serve para atribuir à força. */
+    /**
+     * Decisão do admin sobre quem fica com o lançamento.
+     *
+     * <p>Serve para os dois casos: desempatar uma disputa e apontar o dono de um
+     * lançamento que ninguém reivindicou ("isso foi do João"). Sem o segundo, a
+     * única saída para o lançamento parado no pool era conciliar e deixá-lo cair
+     * no titular.
+     *
+     * <p>Nos dois casos a pessoa é <b>avisada por e-mail</b> e pode contestar com
+     * "não foi minha" enquanto a fatura estiver em avaliação. Atribuir sem
+     * disputa não é um desempate: é o admin dizendo de quem é a conta, e a regra
+     * §3.3 — "quem chegou primeiro nunca decide uma cobrança contestada" — vale
+     * igual para "o admin decidiu".
+     */
     @Transactional
     public Lancamento arbitrar(Long lancamentoId, Long vencedorId, Usuario admin) {
         Lancamento l = Lancamento.findById(lancamentoId);
@@ -138,7 +151,8 @@ public class ReivindicacaoService {
             throw new WebApplicationException("Utilizador inválido.", 400);
         }
 
-        for (Reivindicacao r : Reivindicacao.<Reivindicacao>list("lancamento.id", lancamentoId)) {
+        List<Reivindicacao> disputa = Reivindicacao.list("lancamento.id", lancamentoId);
+        for (Reivindicacao r : disputa) {
             r.status = r.usuario.getId().equals(vencedorId)
                     ? StatusReivindicacao.ACEITA
                     : StatusReivindicacao.REJEITADA;
@@ -153,8 +167,10 @@ public class ReivindicacaoService {
         l.persist();
         atribuicao.registrarCompromisso(l, vencedor);
         conciliacao.recalcularAcertos(l.fatura.getId());
+        notificacao.atribuidoPeloAdmin(l, vencedor, disputa.size() > 1);
         auditoria.registrar(admin, AcaoAuditoria.ARBITRAR, "Lancamento", l.id,
-                "atribuído a " + vencedor.nome);
+                "atribuído a " + vencedor.nome
+                + (disputa.size() > 1 ? " (disputa entre " + disputa.size() + ")" : " (sem disputa)"));
         return l;
     }
 

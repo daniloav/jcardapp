@@ -7,6 +7,7 @@ import br.com.jcard.model.Lancamento;
 import br.com.jcard.model.Usuario;
 import br.com.jcard.security.TokenService;
 import br.com.jcard.security.UsuarioLogado;
+import br.com.jcard.service.ApelidoService;
 import br.com.jcard.service.DivisaoService;
 import br.com.jcard.service.ReivindicacaoService;
 import jakarta.annotation.security.RolesAllowed;
@@ -32,6 +33,9 @@ public class LancamentoResource {
 
     @Inject
     DivisaoService divisao;
+
+    @Inject
+    ApelidoService apelidos;
 
     @Inject
     UsuarioLogado logado;
@@ -84,7 +88,13 @@ public class LancamentoResource {
                 divisao.juntar(id, eu, logado.isAdmin()), eu.id);
     }
 
-    /** Decisão do admin sobre quem fica com o lançamento disputado. */
+    /**
+     * Decisão do admin sobre quem fica com o lançamento.
+     *
+     * <p>Vale para o conflito e para o lançamento que ninguém reivindicou — nos
+     * dois casos a pessoa é avisada por e-mail e pode contestar com "não foi
+     * minha" enquanto a fatura estiver em avaliação.
+     */
     @POST
     @Path("/{id}/arbitrar")
     @RolesAllowed(TokenService.ADMIN)
@@ -94,5 +104,28 @@ public class LancamentoResource {
         Usuario admin = logado.get();
         return Responses.LancamentoResponse.de(
                 servico.arbitrar(id, req.vencedorId(), admin), admin.id);
+    }
+
+    /**
+     * Batiza o estabelecimento deste lançamento.
+     *
+     * <p>Qualquer utilizador apelida: quem reconhece a loja é quem comprou nela.
+     * O apelido vale para todo mundo e para as próximas faturas.
+     */
+    @POST
+    @Path("/{id}/apelido")
+    @Transactional
+    public Responses.ApelidoResponse apelidar(@PathParam("id") Long id,
+                                              @Valid Requests.Apelidar req) {
+        return Responses.ApelidoResponse.de(
+                apelidos.apelidar(id, req.apelido(), logado.exigirSenhaTrocada()));
+    }
+
+    /** Volta a mostrar o nome que o banco imprime. */
+    @DELETE
+    @Path("/{id}/apelido")
+    @Transactional
+    public void removerApelido(@PathParam("id") Long id) {
+        apelidos.remover(id, logado.exigirSenhaTrocada());
     }
 }

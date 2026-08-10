@@ -83,10 +83,12 @@ jcardapp/
 │   └── src/main/java/br/com/jcard/
 │       ├── model/              ← entidades (EntidadeBase, Fatura, Lancamento, DivisaoLancamento, ...)
 │       ├── parser/             ← ItauCsvParser (preferido) · ItauFaturaParser (PDF) · ChaveParcelamento
-│       ├── service/            ← Conciliacao, Rateio, Divisao, Atribuicao, Reivindicacao, Acerto, Notificacao
+│       ├── service/            ← Conciliacao, Rateio, Divisao, Atribuicao, Reivindicacao, Acerto,
+│       │                          Apelido, Notificacao
 │       ├── resource/           ← endpoints REST + ErrorMapper
 │       ├── dto/ · security/ · bootstrap/
 │       └── resources/db/migration/  ← V1__schema · V2__divisao_encargos_comprovante
+│                                       V3__reabertura_e_apelidos
 ├── frontend/                   ← Angular 17
 │   ├── Dockerfile.runtime · nginx.conf
 │   └── src/{sw.js, manifest.webmanifest, app/{core,layout,pages}}
@@ -119,11 +121,11 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 79 testes, incluindo as duas
+- **Backend**: `cd backend && mvn -B verify` — 94 testes, incluindo as duas
   invariantes de conciliação, a divisão de contas, o rateio de encargos, o ciclo
-  de pagamento com comprovante, a herança de parcela, o fluxo da API por HTTP e
-  os dois leitores de fatura contra fixtures anonimizados
-  (`fatura-itau-exemplo.csv` e `.txt`).
+  de pagamento com comprovante, a herança de parcela, a reabertura da avaliação,
+  o fluxo da API por HTTP e os dois leitores de fatura contra fixtures
+  anonimizados (`fatura-itau-exemplo.csv` e `.txt`).
 - **Frontend**: `cd frontend && npx ng build`.
 - O perfil `%test` usa o banco **`jcard_test`** com `flyway.clean-at-start` — nunca
   aponte para o banco de dev, ele é apagado a cada execução.
@@ -164,6 +166,20 @@ com troca de senha obrigatória.
   divergiria do rateio real assim que alguém assumisse mais um lançamento. Por
   isso a tela do utilizador e a conciliação chamam o **mesmo** método — o número
   que a pessoa confere é, ao centavo, o que ela vai pagar.
+- **A sobra da conciliação tem origem própria.** O que ninguém assume e cai no
+  titular é marcado `SOBRA_CONCILIACAO`, não `ADMIN`. Sem essa distinção,
+  reabrir a avaliação não teria como devolver ao pool só o que ficou com o
+  titular por falta de dono, sem desfazer junto o que o admin arbitrou.
+- **Reabrir a avaliação para com acerto confirmado.** Acerto `CONFIRMADO` nunca
+  é recalculado; congelado no meio de um rateio que mudou, ele faria a soma dos
+  acertos deixar de reproduzir o total e a fatura ficaria impossível de
+  conciliar de novo. O admin reabre aquele acerto antes — decisão explícita
+  sobre dinheiro já pago, em vez de um 500 na próxima conciliação.
+- **O apelido do estabelecimento é global e chaveado pela descrição
+  normalizada.** Vale para os meses seguintes de graça (é a mesma chave que casa
+  o parcelamento) e para todo mundo, porque nomear a loja é descrever a loja, não
+  registrar preferência. A descrição do banco continua na tela: é ela que casa
+  com o extrato.
 - **A exclusão de fatura apaga o compromisso parcelado à mão.** O resto cai por
   cascata, mas a FK do compromisso é `ON DELETE SET NULL`: ele sobreviveria órfão
   e seguiria atribuindo parcelas a partir de uma fatura que não existe mais.
@@ -215,10 +231,13 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 79 testes verdes (`mvn verify`).
-- ✅ Frontend Angular 17 + PWA compilando (84 kB no bundle inicial).
+- ✅ Backend completo, 94 testes verdes (`mvn verify`).
+- ✅ Frontend Angular 17 + PWA compilando (85 kB no bundle inicial).
 - ✅ Conta dividida, encargo rateado, aceite com comprovante de PIX e exclusão de
    fatura — implementados e conferidos no app rodando.
+- ✅ **Fluxo de indicação (ROADMAP §2)** — reabrir a avaliação, admin atribuir
+   direto, busca/agrupamento/desfazer no pool e apelido de estabelecimento;
+   conferidos no app rodando, inclusive no tamanho de celular.
 - ✅ CI/CD escritos; o CD roda em **modo mock** enquanto os secrets `OCI_*`
   estiverem vazios — a esteira fica verde antes de as VMs existirem.
 - ⏳ **VM ainda não provisionada.** Migramos de Oracle para GCP + Neon depois de
@@ -230,6 +249,5 @@ com troca de senha obrigatória.
 - ⏳ Pendências do Danilo: contas GCP e Neon, token do DuckDNS, senha de app do
   Gmail, PAT com `read:packages`.
 - 📋 O que ficou para depois — e por quê — está em `docs/ROADMAP.md`. Em
-  destaque: melhorar o fluxo de indicação (busca e agrupamento no pool, desfazer
-  indicação errada, admin atribuir direto) e definir `JCARD_PIX_*` no `.env` da
-  VM antes do primeiro deploy.
+  destaque: definir `JCARD_PIX_*` no `.env` da VM antes do primeiro deploy e
+  conferir os acertos abertos quando a V2 subir.

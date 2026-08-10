@@ -117,6 +117,39 @@ public class Lancamento extends EntidadeBase {
                 faturaId, tiposRateaveis());
     }
 
+    /**
+     * O que a conciliação deu ao titular só porque ninguém assumiu.
+     *
+     * <p>É o conjunto exato que a reabertura da avaliação devolve ao pool — o
+     * que o admin atribuiu de propósito (origem {@code ADMIN}) fica onde está.
+     */
+    public static List<Lancamento> sobrasDaConciliacao(Long faturaId) {
+        return list("fatura.id = ?1 and origemAtribuicao = ?2",
+                faturaId, OrigemAtribuicao.SOBRA_CONCILIACAO);
+    }
+
+    /**
+     * Estabelecimentos em que esta pessoa já assumiu compra em <b>outras</b>
+     * faturas — assumindo sozinha ou como parte de uma conta dividida.
+     *
+     * <p>Serve para a tela marcar "você assumiu isso no mês passado": a maior
+     * parte das compras se repete, e reconhecer vira conferir. Devolve só o
+     * histórico de quem está olhando, nunca o de outra pessoa.
+     */
+    public static java.util.Set<String> estabelecimentosDe(Long usuarioId, Long excetoFaturaId) {
+        return new java.util.HashSet<>(getEntityManager().createQuery("""
+                select distinct l.descricaoNormalizada
+                  from Lancamento l
+                 where l.fatura.id <> :fatura
+                   and ( l.responsavel.id = :usuario
+                         or exists (select 1 from DivisaoLancamento d
+                                    where d.lancamento = l and d.usuario.id = :usuario) )
+                """, String.class)
+                .setParameter("fatura", excetoFaturaId)
+                .setParameter("usuario", usuarioId)
+                .getResultList());
+    }
+
     /** Encargos da fatura: IOF, anuidade, juros, ajustes. Sempre rateados. */
     public static List<Lancamento> encargosDaFatura(Long faturaId) {
         return list("fatura.id = ?1 and tipo in ?2 order by dataCompra, id",
