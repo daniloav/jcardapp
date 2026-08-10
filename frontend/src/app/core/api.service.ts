@@ -2,8 +2,8 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
-  Acerto, Cartao, DetalheFatura, Fatura, Lancamento, MinhasContas, Pessoa, Pix,
-  ResultadoLote, Usuario,
+  Acerto, Cartao, DetalheDoUtilizador, DetalheFatura, Fatura, Lancamento, MinhasContas,
+  Pessoa, Pix, ResultadoLote, Usuario,
 } from './models';
 
 /** Ponto único de acesso à API. Todo componente passa por aqui. */
@@ -70,6 +70,15 @@ export class ApiService {
 
   acertosDaFatura(faturaId: number): Observable<Acerto[]> {
     return this.http.get<Acerto[]>(`/api/faturas/${faturaId}/acertos`);
+  }
+
+  /**
+   * A conta de uma pessoa aberta linha a linha, para o admin conferir se o
+   * encargo foi rateado com ela — e, quando não foi, por quê.
+   */
+  detalheDoUtilizador(faturaId: number, usuarioId: number): Observable<DetalheDoUtilizador> {
+    return this.http.get<DetalheDoUtilizador>(
+      `/api/faturas/${faturaId}/utilizadores/${usuarioId}/detalhe`);
   }
 
   // --------------------------------------------------------- lançamentos --

@@ -247,6 +247,40 @@ public final class Responses {
                                PixResponse pix) {
     }
 
+    /**
+     * A conta de uma pessoa aberta para o admin conferir, linha a linha.
+     *
+     * <p>Serve para responder "isso foi rateado com ela ou não?" sem ter de
+     * abrir o banco. Sai do <b>mesmo</b> rateio que a tela da pessoa e que a
+     * conciliação — se viesse de outra conta, conferir aqui não provaria nada.
+     *
+     * @param participante  se ela conta como "usou o cartão no mês"; é isso que
+     *                      decide se os encargos são divididos com ela
+     * @param participantes entre quem os encargos estão sendo divididos, na
+     *                      ordem em que os centavos de sobra caem
+     * @param compras       o que é dela por ter assumido ou por parte de conta
+     *                      dividida, cada uma com a fatia dela
+     * @param encargos      os encargos da fatura com a fatia dela; vazio quando
+     *                      ela não é participante
+     * @param acerto        o acerto <b>gravado</b>, para comparar com o rateio
+     *                      recalculado agora
+     * @param diferencaAcerto {@code acerto - total}: zero quando bate, e é o
+     *                      número que denuncia acerto congelado (quem já pagou
+     *                      não é recalculado, de propósito). {@code null} quando
+     *                      ainda não há acerto
+     */
+    public record DetalheDoUtilizador(Pessoa usuario,
+                                      boolean participante,
+                                      List<Pessoa> participantes,
+                                      List<LancamentoResponse> compras,
+                                      List<LancamentoResponse> encargos,
+                                      BigDecimal totalCompras,
+                                      BigDecimal totalEncargos,
+                                      BigDecimal total,
+                                      AcertoResponse acerto,
+                                      BigDecimal diferencaAcerto) {
+    }
+
     /** A chave para onde o dinheiro vai. Vem da configuração, não do código. */
     public record PixResponse(String tipo, String chave, String titular) {
     }

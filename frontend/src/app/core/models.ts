@@ -148,6 +148,29 @@ export interface DetalheFatura {
 }
 
 /**
+ * A conta de uma pessoa aberta para o admin conferir, linha a linha.
+ *
+ * Vem do mesmo rateio que a tela da pessoa: conferir contra um segundo cálculo
+ * só provaria que os dois concordam entre si.
+ */
+export interface DetalheDoUtilizador {
+  usuario: Pessoa;
+  /** Se ela conta como "usou o cartão" — é isso que decide o rateio do encargo. */
+  participante: boolean;
+  /** Entre quem os encargos estão sendo divididos. */
+  participantes: Pessoa[];
+  compras: Lancamento[];
+  encargos: Lancamento[];
+  totalCompras: number;
+  totalEncargos: number;
+  total: number;
+  /** O acerto gravado, para comparar com o rateio recalculado agora. */
+  acerto: Acerto | null;
+  /** `acerto - total`: zero quando bate; null quando ainda não há acerto. */
+  diferencaAcerto: number | null;
+}
+
+/**
  * O que a atribuição em massa fez. O que foi pulado importa tanto quanto o que
  * foi atribuído: é a parte que o admin não vê acontecer.
  */

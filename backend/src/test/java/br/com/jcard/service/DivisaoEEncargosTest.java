@@ -231,6 +231,42 @@ class DivisaoEEncargosTest {
         assertEquals(0, new BigDecimal("330.00").compareTo(somaDosAcertos(f)));
     }
 
+    /**
+     * O divisor do encargo muda na conciliação quando sobra lançamento sem dono
+     * — e isso é <b>de propósito</b>.
+     *
+     * <p>Antes de conciliar, quem não assumiu nada não usou o cartão: o encargo
+     * é dividido só entre quem assumiu. A conciliação dá as sobras ao titular, e
+     * aí ele passa a ter lançamento na fatura — logo, passa a dividir o encargo
+     * também. Não é o rateio deixando de recalcular: é o conjunto de
+     * participantes mudando, porque a sobra encontrou dono.
+     *
+     * <p>É por isso que a tela do utilizador avisa, enquanto a fatura está em
+     * avaliação, que o total dele ainda pode mudar "enquanto houver lançamento
+     * sem dono". O teste existe para o aviso e o cálculo não se separarem.
+     */
+    @Test
+    @DisplayName("a sobra que vai para o titular na conciliação passa a dividir o encargo")
+    void sobraDaConciliacaoEntraNoRateioDoEncargo() {
+        Fatura f = novaFatura("2026-08", "210.00");
+        Lancamento a = criarLancamento(f, "COMPRA A", "100.00", TipoLancamento.COMPRA);
+        criarLancamento(f, "COMPRA B QUE NINGUEM ASSUME", "100.00", TipoLancamento.COMPRA);
+        criarLancamento(f, "IOF", "10.00", TipoLancamento.IOF);
+        conciliacao.validarLeitura(f.id);
+        reivindicacoes.reivindicar(a.id, joao, null);
+
+        assertEquals(0, new BigDecimal("110.00").compareTo(acerto(f, joao).valorDevido),
+                "enquanto a compra B não tem dono, só o João usou o cartão: o IOF é todo dele");
+
+        conciliacao.conciliar(f.id, titular);
+
+        assertEquals(0, new BigDecimal("105.00").compareTo(acerto(f, joao).valorDevido),
+                "a sobra deu um lançamento ao titular, e o IOF passa a ser dividido com ele");
+        assertEquals(0, new BigDecimal("105.00").compareTo(acerto(f, titular).valorDevido));
+        assertEquals(0, new BigDecimal("210.00").compareTo(somaDosAcertos(f)),
+                "mudando o divisor ou não, a soma dos acertos reproduz o total");
+    }
+
     @Test
     @DisplayName("o encargo continua sem responsável depois da conciliação — é o que mantém o rateio")
     void encargoNaoVaiParaOTitularNaConciliacao() {

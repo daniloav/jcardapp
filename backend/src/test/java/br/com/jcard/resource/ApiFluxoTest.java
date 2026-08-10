@@ -313,6 +313,113 @@ class ApiFluxoTest {
                 .body("pool.size()", equalTo(1));
     }
 
+    /**
+     * A conferência do admin: a conta de cada pessoa aberta linha a linha.
+     *
+     * <p>É a tela que responde "esse encargo foi rateado com ela ou não?" sem
+     * abrir o banco. O teste percorre o caso que gera a dúvida: duas pessoas na
+     * fatura, uma que assumiu e outra que não.
+     */
+    @Test
+    @DisplayName("o detalhe da conta abre a fatia do encargo e bate com o acerto gravado")
+    void detalheDaContaMostraOEncargoRateado() {
+        String admin = trocarESeguir();
+        int joaoId = criarUtilizador(admin, "Joao Filho", "joao@teste.local");
+        criarUtilizador(admin, "Maria Filha", "maria@teste.local");
+        String tokenJoao = entrarComoUtilizador("joao.filho");
+
+        String csv = """
+                pagina;coluna;data;estabelecimento;parcela;valor
+                2;1;08/07;PADARIA DO BAIRRO;;120,00
+                2;1;10/07;ANUIDADE DIFERENCIADA;;30,00
+                """;
+        int faturaId = given().auth().oauth2(admin)
+                .multiPart("arquivo", "fatura.csv", csv.getBytes())
+                .multiPart("competencia", "2026-08")
+                .multiPart("valorTotal", "150,00")
+            .when().post("/api/faturas")
+            .then().statusCode(200).extract().path("id");
+
+        int padariaId = given().auth().oauth2(tokenJoao)
+                .when().get("/api/faturas/" + faturaId + "/minhas-contas")
+            .then().statusCode(200).extract().path("pool[0].id");
+        given().contentType(ContentType.JSON).auth().oauth2(tokenJoao).body("{}")
+            .when().post("/api/lancamentos/" + padariaId + "/reivindicar")
+            .then().statusCode(200);
+
+        // O João é o único que usou o cartão: a anuidade inteira é dele, e o
+        // detalhe tem de mostrar de onde vêm os R$ 150,00 — não só o total.
+        given().auth().oauth2(admin)
+                .when().get("/api/faturas/" + faturaId + "/utilizadores/" + joaoId + "/detalhe")
+            .then().statusCode(200)
+                .body("participante", equalTo(true))
+                .body("participantes.size()", equalTo(1))
+                .body("compras.size()", equalTo(1))
+                .body("compras[0].minhaParte", equalTo(120.00f))
+                .body("encargos.size()", equalTo(1))
+                .body("encargos[0].minhaParte", equalTo(30.00f))
+                .body("totalCompras", equalTo(120.00f))
+                .body("totalEncargos", equalTo(30.00f))
+                .body("total", equalTo(150.00f))
+                // O acerto gravado tem de reproduzir o rateio recalculado agora:
+                // é essa comparação que denuncia acerto congelado.
+                .body("acerto.valorDevido", equalTo(150.00f))
+                .body("diferencaAcerto", equalTo(0.00f));
+    }
+
+    @Test
+    @DisplayName("quem não assumiu nada aparece fora do rateio, com quem divide os encargos")
+    void detalheDeQuemNaoAssumiuNadaExplicaOPorque() {
+        String admin = trocarESeguir();
+        int joaoId = criarUtilizador(admin, "Joao Filho", "joao@teste.local");
+        int mariaId = criarUtilizador(admin, "Maria Filha", "maria@teste.local");
+        String tokenJoao = entrarComoUtilizador("joao.filho");
+
+        String csv = """
+                pagina;coluna;data;estabelecimento;parcela;valor
+                2;1;08/07;PADARIA DO BAIRRO;;120,00
+                2;1;10/07;ANUIDADE DIFERENCIADA;;30,00
+                """;
+        int faturaId = given().auth().oauth2(admin)
+                .multiPart("arquivo", "fatura.csv", csv.getBytes())
+                .multiPart("competencia", "2026-08")
+                .multiPart("valorTotal", "150,00")
+            .when().post("/api/faturas")
+            .then().statusCode(200).extract().path("id");
+
+        int padariaId = given().auth().oauth2(tokenJoao)
+                .when().get("/api/faturas/" + faturaId + "/minhas-contas")
+            .then().statusCode(200).extract().path("pool[0].id");
+        given().contentType(ContentType.JSON).auth().oauth2(tokenJoao).body("{}")
+            .when().post("/api/lancamentos/" + padariaId + "/reivindicar")
+            .then().statusCode(200);
+
+        // A Maria não assumiu nada: não usou o cartão, então nenhum encargo é
+        // dividido com ela — e a tela diz entre quem ele está sendo dividido.
+        given().auth().oauth2(admin)
+                .when().get("/api/faturas/" + faturaId + "/utilizadores/" + mariaId + "/detalhe")
+            .then().statusCode(200)
+                .body("participante", equalTo(false))
+                .body("compras.size()", equalTo(0))
+                .body("encargos.size()", equalTo(0))
+                .body("total", equalTo(0.00f))
+                .body("participantes.size()", equalTo(1))
+                .body("participantes[0].id", equalTo(joaoId))
+                .body("acerto", org.hamcrest.Matchers.nullValue());
+    }
+
+    @Test
+    @DisplayName("utilizador comum não abre a conta de outra pessoa")
+    void detalheDaContaESoDoAdmin() {
+        String admin = trocarESeguir();
+        int joaoId = criarUtilizador(admin, "Joao Filho", "joao@teste.local");
+        String tokenJoao = entrarComoUtilizador("joao.filho");
+
+        given().auth().oauth2(tokenJoao)
+                .when().get("/api/faturas/1/utilizadores/" + joaoId + "/detalhe")
+            .then().statusCode(403);
+    }
+
     @Test
     @DisplayName("CSV sem o total informado explica o que falta")
     void csvSemTotal() {
@@ -406,6 +513,30 @@ class ApiFluxoTest {
         return given().contentType(ContentType.JSON).auth().oauth2(entrar(SENHA_INICIAL))
                 .body("""
                         {"senhaAtual":"%s","senhaNova":"senhaDefinitiva1"}""".formatted(SENHA_INICIAL))
+            .when().put("/api/me/senha")
+            .then().statusCode(200).extract().path("token");
+    }
+
+    private int criarUtilizador(String tokenAdmin, String nome, String email) {
+        return given().contentType(ContentType.JSON).auth().oauth2(tokenAdmin)
+                .body("""
+                        {"nome":"%s","email":"%s",
+                         "admin":false,"utilizador":true,"recebeNotificacoes":true}"""
+                        .formatted(nome, email))
+            .when().post("/api/usuarios")
+            .then().statusCode(200).extract().path("id");
+    }
+
+    /** Entra com a senha padrão do cadastro e já troca: o token sai utilizável. */
+    private String entrarComoUtilizador(String login) {
+        String provisorio = given().contentType(ContentType.JSON)
+                .body("""
+                        {"login":"%s","senha":"12345678"}""".formatted(login))
+            .when().post("/api/auth/login")
+            .then().statusCode(200).extract().path("token");
+        return given().contentType(ContentType.JSON).auth().oauth2(provisorio)
+                .body("""
+                        {"senhaAtual":"12345678","senhaNova":"senhaDele12345"}""")
             .when().put("/api/me/senha")
             .then().statusCode(200).extract().path("token");
     }

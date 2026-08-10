@@ -57,9 +57,52 @@ Por isso o encargo **continua sem responsável** depois da conciliação: dar do
 ele desligaria o rateio. `PAGAMENTO` (quitação da fatura anterior) fica de fora —
 é ato do titular, não gasto de ninguém.
 
+**O divisor muda na conciliação quando sobra lançamento sem dono, e isso é de
+propósito.** Antes de conciliar, quem não assumiu nada não usou o cartão, e o
+encargo é dividido só entre quem assumiu. A conciliação dá as sobras ao titular;
+ele passa a ter lançamento na fatura e, com isso, passa a dividir o encargo
+também. Um IOF que estava 50/50 entre duas pessoas vira 1/3 para cada uma das
+três. Não é o rateio deixando de recalcular: é o conjunto de participantes
+mudando porque a sobra encontrou dono.
+
+Consequência assumida: o total que a pessoa vê **antes** da conciliação pode
+cair depois dela. É por isso que a tela do utilizador avisa, enquanto a fatura
+está em avaliação, que o valor ainda muda "enquanto houver lançamento sem dono".
+A alternativa — contar o titular como participante desde já — foi considerada e
+recusada: ele ainda não usou o cartão, e antecipar a cobrança do encargo a quem
+talvez não fique com nenhuma sobra seria cobrar por um cenário que não aconteceu.
+
 `TipoLancamento.rateavel` · `RateioService.participantes` · testes
 `encargoERateadoEntreQuemUsou`, `encargoNaoVaiParaOTitularNaConciliacao`,
-`pagamentoAnteriorFicaComOTitular`
+`sobraDaConciliacaoEntraNoRateioDoEncargo`, `pagamentoAnteriorFicaComOTitular`
+
+### 1.4.1 O admin confere a conta de cada pessoa, linha a linha
+
+"R$ 53,33" não diz se o IOF entrou. A conferência abre a conta de qualquer
+utilizador — **inclusive de quem não tem acerto**, que é onde mora a dúvida — e
+mostra as compras com a fatia de cada uma, os encargos com o valor cheio e o
+divisor, e o total.
+
+Três coisas que ela deixa explícito, e que nenhum total sozinho responde:
+
+- **se a pessoa é participante**, e, quando não é, entre quem os encargos estão
+  sendo divididos hoje — a resposta para "por que ela não entrou no rateio?" é
+  sempre a mesma: não tem lançamento assumido nesta fatura;
+- **de onde veio cada compra** (assumida, atribuída, herdada de parcela, sobra
+  da conciliação, parte de conta dividida);
+- **se o acerto gravado bate com o rateio recalculado agora**. Diferença aqui
+  denuncia acerto congelado — quem já pagou não é recalculado, de propósito
+  (§5) — e é o sinal de que aquele acerto precisa ser reaberto antes de
+  conciliar de novo.
+
+Sai do **mesmo** `RateioService.ratear` da tela da pessoa e da conciliação.
+Conferir contra um segundo cálculo não provaria nada: provaria só que os dois
+cálculos concordam entre si.
+
+`GET /api/faturas/{id}/utilizadores/{usuarioId}/detalhe` (admin) ·
+`FaturaResource.detalheDoUtilizador` · `RateioService.participantesDa` · testes
+`detalheDaContaMostraOEncargoRateado`,
+`detalheDeQuemNaoAssumiuNadaExplicaOPorque`, `detalheDaContaESoDoAdmin`
 
 ### 1.5 A soma das partes reproduz o valor do lançamento
 

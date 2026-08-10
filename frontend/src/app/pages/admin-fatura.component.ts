@@ -1,4 +1,4 @@
-import { CurrencyPipe, DatePipe } from '@angular/common';
+import { CurrencyPipe, DatePipe, LowerCasePipe } from '@angular/common';
 import { Component, Input, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -6,13 +6,14 @@ import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ToastService } from '../core/toast.service';
 import {
-  Acerto, DetalheFatura, Lancamento, Usuario, descricaoSemParcela, nomeDoLancamento,
+  Acerto, DetalheDoUtilizador, DetalheFatura, Lancamento, Usuario,
+  descricaoSemParcela, nomeDoLancamento,
 } from '../core/models';
 
 /** Conciliação: conflitos para arbitrar, fechamento e confirmação de pagamentos. */
 @Component({
   standalone: true,
-  imports: [FormsModule, CurrencyPipe, DatePipe],
+  imports: [FormsModule, CurrencyPipe, DatePipe, LowerCasePipe],
   template: `
     @if (detalhe(); as d) {
       <h1>Conciliação · {{ d.fatura.competencia | date: 'MM/yyyy' }}</h1>
@@ -109,6 +110,9 @@ import {
                     }
                   </td>
                   <td>
+                    <button type="button" class="btn-texto" (click)="abrirDetalhe(a.usuarioId)">
+                      Conferir conta
+                    </button>
                     @if (a.temComprovante) {
                       <button type="button" class="btn-texto" (click)="verComprovante(a)">
                         Ver comprovante
@@ -146,6 +150,164 @@ import {
           </table>
         </div>
       }
+
+      <!-- --------------------------------------------- conferir uma conta -- -->
+      <!-- O total de uma pessoa não diz de onde ele veio: "R$ 53,33" não conta
+           se o IOF entrou ou não. Aqui a conta abre linha a linha, e vale para
+           quem NÃO tem acerto também — é justamente aí que mora a dúvida. -->
+      <h2>Conferir a conta de uma pessoa</h2>
+      <div class="cartao">
+        <div class="atribuir">
+          <select [ngModel]="pessoaDetalhe()" (ngModelChange)="pessoaDetalhe.set($event)"
+                  aria-label="Conferir a conta de" name="pessoaDetalhe">
+            <option [ngValue]="null">Escolha a pessoa…</option>
+            @for (u of utilizadores(); track u.id) {
+              <option [ngValue]="u.id">{{ u.nome }}</option>
+            }
+          </select>
+          <button type="button" [disabled]="!pessoaDetalhe() || carregandoDetalhe()"
+                  (click)="abrirDetalhe(pessoaDetalhe()!)">
+            Abrir detalhe
+          </button>
+          @if (conta()) {
+            <button type="button" class="btn-texto" (click)="fecharDetalhe()">Fechar</button>
+          }
+        </div>
+
+        @if (conta(); as u) {
+          <div class="detalhe-conta">
+            <h3>{{ u.usuario.nome }}</h3>
+
+            @if (u.participante) {
+              <p class="meta">
+                <span class="tag ok">divide os encargos</span>
+                Tem lançamento assumido nesta fatura, então entra no rateio.
+                Os encargos estão sendo divididos entre
+                <strong>{{ nomesParticipantes(u) }}</strong> — a sobra de centavos
+                fica com o primeiro da lista (o titular, quando ele participa).
+              </p>
+            } @else {
+              <p class="meta">
+                <span class="tag alerta">fora do rateio</span>
+                Não tem nenhum lançamento assumido nesta fatura — nem sozinho, nem
+                como parte de conta dividida —, então essa pessoa não conta como
+                quem usou o cartão e nenhum encargo é dividido com ela. Hoje os encargos vão
+                para <strong>{{ nomesParticipantes(u) }}</strong>.
+                @if (conflitos().length > 0) {
+                  Atenção: há conflito para decidir nesta fatura, e quem reivindicou
+                  um lançamento em disputa ainda não é dono dele.
+                }
+              </p>
+            }
+
+            <h4>Compras ({{ u.compras.length }})</h4>
+            @if (u.compras.length === 0) {
+              <p class="vazio">Nenhuma compra nesta fatura.</p>
+            } @else {
+              <div class="rolavel">
+                <table>
+                  <thead>
+                    <tr><th>Data</th><th>Descrição</th><th class="num">Lançamento</th>
+                        <th class="num">Parte da pessoa</th><th>Como veio</th></tr>
+                  </thead>
+                  <tbody>
+                    @for (l of u.compras; track l.id) {
+                      <tr>
+                        <td>{{ l.dataCompra | date: 'dd/MM' }}</td>
+                        <td>
+                          {{ nome(l) }}
+                          @if (l.parcelaTotal) {
+                            <span class="tag">{{ l.parcelaAtual }}/{{ l.parcelaTotal }}</span>
+                          }
+                        </td>
+                        <td class="num">{{ l.valor | currency: 'BRL' }}</td>
+                        <td class="num">{{ l.minhaParte | currency: 'BRL' }}</td>
+                        <td>
+                          @if (l.divisao.length > 0) {
+                            <span class="tag info">conta dividida entre {{ l.divisao.length }}</span>
+                          } @else {
+                            {{ rotuloOrigem(l) }}
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                  <tfoot>
+                    <tr><th colspan="3">Total em compras</th>
+                        <th class="num">{{ u.totalCompras | currency: 'BRL' }}</th><th></th></tr>
+                  </tfoot>
+                </table>
+              </div>
+            }
+
+            <h4>Encargos ({{ u.encargos.length }})</h4>
+            @if (u.encargos.length === 0) {
+              <p class="vazio">
+                Nenhum encargo dividido com essa pessoa
+                {{ u.participante
+                   ? '— esta fatura não tem encargo.'
+                   : '— essa pessoa está fora do rateio, como explicado acima.' }}
+              </p>
+            } @else {
+              <div class="rolavel">
+                <table>
+                  <caption class="sub">
+                    Cada encargo é dividido entre as {{ u.participantes.length }} pessoa(s)
+                    que usaram o cartão no mês.
+                  </caption>
+                  <thead>
+                    <tr><th>Descrição</th><th class="num">Encargo</th>
+                        <th class="num">÷ {{ u.participantes.length }}</th></tr>
+                  </thead>
+                  <tbody>
+                    @for (l of u.encargos; track l.id) {
+                      <tr>
+                        <td>{{ nome(l) }} <span class="tag">{{ l.tipo | lowercase }}</span></td>
+                        <td class="num">{{ l.valor | currency: 'BRL' }}</td>
+                        <td class="num">{{ l.minhaParte | currency: 'BRL' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                  <tfoot>
+                    <tr><th colspan="2">Total em encargos</th>
+                        <th class="num">{{ u.totalEncargos | currency: 'BRL' }}</th></tr>
+                  </tfoot>
+                </table>
+              </div>
+            }
+
+            <div class="linha total-conferido">
+              <div>
+                <strong>Total pelo rateio de agora</strong>
+                <div class="meta">
+                  {{ u.totalCompras | currency: 'BRL' }} em compras
+                  + {{ u.totalEncargos | currency: 'BRL' }} de encargos
+                </div>
+              </div>
+              <strong style="font-size:1.2rem">{{ u.total | currency: 'BRL' }}</strong>
+            </div>
+
+            @if (u.acerto; as a) {
+              <p class="meta">
+                Acerto gravado: <strong>{{ a.valorDevido | currency: 'BRL' }}</strong>
+                ({{ rotuloAcerto(a.status) }}).
+                @if (u.diferencaAcerto === 0) {
+                  <span class="tag ok">bate com o rateio</span>
+                } @else {
+                  <span class="tag erro">difere em {{ u.diferencaAcerto | currency: 'BRL' }}</span>
+                  Acerto confirmado não é recalculado de propósito — se a diferença for
+                  essa, reabra o acerto antes de conciliar de novo.
+                }
+              </p>
+            } @else {
+              <p class="meta">
+                Ainda sem acerto gravado: ele nasce no primeiro recálculo, e é
+                recalculado a cada mudança de dono até a conciliação.
+              </p>
+            }
+          </div>
+        }
+      </div>
 
       <h2>Fechamento</h2>
       <div class="cartao">
@@ -368,6 +530,10 @@ export class AdminFaturaComponent {
   /** Para quem vai o resultado inteiro da busca. */
   donoEmMassa = signal<number | null>(null);
   atribuindoEmMassa = signal(false);
+  /** A conta que está aberta para conferência, e de quem. */
+  pessoaDetalhe = signal<number | null>(null);
+  conta = signal<DetalheDoUtilizador | null>(null);
+  carregandoDetalhe = signal(false);
   motivo = '';
 
   private faturaId = 0;
@@ -463,6 +629,42 @@ export class AdminFaturaComponent {
   /** Encargo não tem dono: é dividido entre todos que usaram o cartão no mês. */
   rateado(l: Lancamento): boolean {
     return l.tipo !== 'COMPRA' && l.tipo !== 'ESTORNO' && l.tipo !== 'PAGAMENTO';
+  }
+
+  /**
+   * Abre a conta de uma pessoa linha a linha.
+   *
+   * <p>Recarrega do backend a cada abertura, inclusive na mesma pessoa: o
+   * rateio muda a cada lançamento que troca de dono, e conferir contra um
+   * número guardado na tela seria conferir contra o passado.
+   */
+  abrirDetalhe(usuarioId: number): void {
+    this.pessoaDetalhe.set(usuarioId);
+    this.carregandoDetalhe.set(true);
+    this.api.detalheDoUtilizador(this.faturaId, usuarioId).subscribe({
+      next: (r) => { this.conta.set(r); this.carregandoDetalhe.set(false); },
+      error: () => this.carregandoDetalhe.set(false),
+    });
+  }
+
+  fecharDetalhe(): void {
+    this.conta.set(null);
+    this.pessoaDetalhe.set(null);
+  }
+
+  nomesParticipantes(u: DetalheDoUtilizador): string {
+    return u.participantes.map((p) => p.nome).join(', ') || '—';
+  }
+
+  /** De onde veio o lançamento para a pessoa, na coluna "como veio". */
+  rotuloOrigem(l: Lancamento): string {
+    return {
+      MANUAL: 'a pessoa marcou "foi minha"',
+      ADMIN: 'você atribuiu',
+      HERDADA_PARCELA: 'parcela herdada',
+      REGRA_CARTAO: 'regra do cartão',
+      SOBRA_CONCILIACAO: 'ninguém assumiu — ficou com o titular',
+    }[l.origemAtribuicao ?? 'MANUAL'] ?? '—';
   }
 
   /**
@@ -637,6 +839,12 @@ export class AdminFaturaComponent {
         this.detalhe.set(r.detalhe);
         this.conflitos.set(r.conflitos);
         this.utilizadores.set(r.utilizadores);
+        // A conta aberta segue o que acabou de mudar: deixá-la parada mostraria
+        // o rateio de antes da atribuição que o admin acabou de fazer.
+        const aberta = this.conta()?.usuario.id;
+        if (aberta) {
+          this.abrirDetalhe(aberta);
+        }
       },
     });
   }

@@ -255,6 +255,84 @@ public class FaturaResource {
         return Acerto.daFatura(id).stream().map(Responses.AcertoResponse::de).toList();
     }
 
+    /**
+     * A conta de uma pessoa aberta linha a linha, para o admin conferir.
+     *
+     * <p>Responde à pergunta que o total sozinho não responde: "esse encargo foi
+     * rateado com ela ou não?" — e, quando não foi, mostra o porquê, que é
+     * sempre o mesmo: ela não tem lançamento assumido nesta fatura, então não
+     * consta como quem usou o cartão no mês.
+     *
+     * <p>Sai do <b>mesmo</b> {@code RateioService.ratear} que alimenta a tela da
+     * pessoa e a conciliação. Conferir contra um segundo cálculo não provaria
+     * nada: provaria só que os dois cálculos concordam entre si.
+     *
+     * <p>Funciona para qualquer utilizador, inclusive quem <b>não</b> tem acerto
+     * — é justamente aí que mora a dúvida.
+     */
+    @GET
+    @Path("/{id}/utilizadores/{usuarioId}/detalhe")
+    @RolesAllowed(TokenService.ADMIN)
+    @Transactional
+    public Responses.DetalheDoUtilizador detalheDoUtilizador(@PathParam("id") Long id,
+                                                             @PathParam("usuarioId") Long usuarioId) {
+        Fatura f = buscar(id);
+        Usuario alvo = Usuario.findById(usuarioId);
+        if (alvo == null) {
+            throw new WebApplicationException("Utilizador não encontrado.", 404);
+        }
+        Usuario titular = conciliacao.titular();
+        Map<String, String> apelidos = ApelidoEstabelecimento.mapa();
+
+        List<Usuario> participantes = rateio.participantesDa(f, titular);
+        Map<Long, BigDecimal> dela = rateio.ratear(f, titular).stream()
+                .filter(p -> p.usuarioId().equals(usuarioId))
+                .collect(java.util.stream.Collectors.toMap(
+                        RateioService.Parte::lancamentoId, RateioService.Parte::valor,
+                        BigDecimal::add));
+
+        // As divisões vêm numa consulta só: por lançamento seriam 514 idas ao
+        // banco para montar uma tela de conferência.
+        Map<Long, List<DivisaoLancamento>> divisoes = new java.util.HashMap<>();
+        for (DivisaoLancamento d : DivisaoLancamento.daFatura(id)) {
+            divisoes.computeIfAbsent(d.lancamento.getId(), k -> new java.util.ArrayList<>()).add(d);
+        }
+
+        List<Responses.LancamentoResponse> compras = new java.util.ArrayList<>();
+        List<Responses.LancamentoResponse> encargos = new java.util.ArrayList<>();
+        for (Lancamento l : Lancamento.daFatura(id)) {
+            BigDecimal parte = dela.get(l.id);
+            if (parte == null) {
+                continue;
+            }
+            Responses.LancamentoResponse linha = Responses.LancamentoResponse.de(l, usuarioId)
+                    .comApelido(apelidos.get(l.descricaoNormalizada))
+                    .comDivisao(divisoes.getOrDefault(l.id, List.of()), usuarioId)
+                    .comMinhaParte(parte);
+            if (l.tipo.rateavel()) {
+                encargos.add(linha);
+            } else {
+                compras.add(linha);
+            }
+        }
+
+        // Escala fixa em 2: somar lista vazia devolve BigDecimal.ZERO, que sai
+        // como "0" no JSON enquanto os demais saem como "0.00". Numa tela de
+        // conferência de dinheiro, o mesmo número tem de ter sempre a mesma cara.
+        BigDecimal totalCompras = somar(compras);
+        BigDecimal totalEncargos = somar(encargos);
+        BigDecimal total = totalCompras.add(totalEncargos);
+
+        Acerto a = Acerto.de(id, usuarioId);
+        return new Responses.DetalheDoUtilizador(
+                new Responses.Pessoa(alvo.id, alvo.nome),
+                participantes.stream().anyMatch(u -> u.id.equals(usuarioId)),
+                participantes.stream().map(u -> new Responses.Pessoa(u.id, u.nome)).toList(),
+                compras, encargos, totalCompras, totalEncargos, total,
+                a == null ? null : Responses.AcertoResponse.de(a),
+                a == null ? null : a.valorDevido.subtract(total));
+    }
+
     // ------------------------------------------------------------ fechamento --
 
     @POST
@@ -345,6 +423,14 @@ public class FaturaResource {
     }
 
     // --------------------------------------------------------------- apoio --
+
+    /** Soma as fatias de uma lista, sempre com duas casas. */
+    private static BigDecimal somar(List<Responses.LancamentoResponse> linhas) {
+        return linhas.stream()
+                .map(Responses.LancamentoResponse::minhaParte)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+    }
 
     private Fatura buscar(Long id) {
         Fatura f = Fatura.findById(id);

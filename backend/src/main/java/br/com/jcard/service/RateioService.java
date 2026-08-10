@@ -85,6 +85,24 @@ public class RateioService {
     }
 
     /**
+     * Quem divide os encargos desta fatura, na ordem do rateio.
+     *
+     * <p>Público porque a conferência do admin precisa <b>nomear</b> quem está
+     * dividindo: "a fatia é R$ 2,53 porque o IOF de R$ 7,57 está sendo dividido
+     * entre estas três pessoas" responde a dúvida; "R$ 2,53" sozinho, não.
+     */
+    public List<Usuario> participantesDa(Fatura fatura, Usuario titular) {
+        List<Long> ids = participantes(
+                Lancamento.daFatura(fatura.getId()),
+                divisoesPorLancamento(fatura.getId()),
+                titular);
+        // Lambda, e não `Usuario::findById`: a estática do Panache é reescrita
+        // por bytecode na subclasse, e a referência de método prende a versão
+        // base — que estoura com "did you forget to annotate your entity".
+        return ids.stream().map(id -> (Usuario) Usuario.findById(id)).toList();
+    }
+
+    /**
      * Quem usou o cartão no mês, na ordem em que os centavos de sobra são
      * distribuídos: o titular primeiro, depois os demais por id.
      *
