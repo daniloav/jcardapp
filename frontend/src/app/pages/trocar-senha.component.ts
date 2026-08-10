@@ -61,7 +61,7 @@ export class TrocarSenhaComponent {
       next: () => {
         this.carregando.set(false);
         this.toast.ok('Senha alterada.');
-        this.router.navigate(['/faturas']);
+        this.router.navigate(['/inicio']);
       },
       error: () => this.carregando.set(false),
     });

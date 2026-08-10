@@ -118,11 +118,29 @@ public class FaturaResource {
 
     // ------------------------------------------------------------- consulta --
 
+    /**
+     * A lista de faturas — e a base do gráfico da tela inicial.
+     *
+     * <p>Três consultas no total, independentes da quantidade de faturas: o
+     * cabeçalho de todos os meses (sem o texto da fatura), as contagens de
+     * lançamentos e as de conflito. Antes eram três <b>por fatura</b>, uma delas
+     * carregando o pool inteiro para chamar {@code size()} — com um ano de
+     * faturas de 514 linhas, a tela inicial esperava por isso.
+     */
     @GET
     @Transactional
     public List<Responses.FaturaResponse> listar() {
         logado.exigirSenhaTrocada();
-        return Fatura.recentes().stream().map(this::resumo).toList();
+        Map<Long, Lancamento.Contagem> contagens = Lancamento.contagensPorFatura();
+        Map<Long, Integer> conflitos = Reivindicacao.conflitosPorFatura();
+        return Fatura.resumosRecentes().stream()
+                .map(f -> {
+                    Lancamento.Contagem c = contagens.getOrDefault(
+                            f.id(), Lancamento.Contagem.VAZIA);
+                    return Responses.FaturaResponse.de(f, (int) c.total(), (int) c.noPool(),
+                            conflitos.getOrDefault(f.id(), 0));
+                })
+                .toList();
     }
 
     /** Visão completa da fatura — só o admin vê todos os lançamentos com dono. */

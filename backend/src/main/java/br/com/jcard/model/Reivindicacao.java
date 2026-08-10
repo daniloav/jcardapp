@@ -67,4 +67,25 @@ public class Reivindicacao extends EntidadeBase {
                 .setParameter("s", StatusReivindicacao.PENDENTE)
                 .getResultList();
     }
+
+    /**
+     * Quantos lançamentos em conflito cada fatura tem — para a listagem, que
+     * mostra o número de todos os meses de uma vez.
+     *
+     * <p>Agrupa por lançamento no banco (é lá que está o "2+ pendentes") e conta
+     * os lançamentos por fatura aqui: JPQL não aceita agregar o resultado de um
+     * {@code group by ... having} sem uma subconsulta no {@code from}.
+     */
+    public static java.util.Map<Long, Integer> conflitosPorFatura() {
+        java.util.Map<Long, Integer> mapa = new java.util.HashMap<>();
+        getEntityManager().createQuery("""
+                select r.lancamento.fatura.id, r.lancamento.id from Reivindicacao r
+                where r.status = :s
+                group by r.lancamento.fatura.id, r.lancamento.id having count(r.id) > 1
+                """, Object[].class)
+                .setParameter("s", StatusReivindicacao.PENDENTE)
+                .getResultList()
+                .forEach(linha -> mapa.merge((Long) linha[0], 1, Integer::sum));
+        return mapa;
+    }
 }

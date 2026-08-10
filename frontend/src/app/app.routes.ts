@@ -21,6 +21,12 @@ export const rotas: Routes = [
     title: 'Trocar senha · JcardApp',
   },
   {
+    path: 'inicio',
+    canActivate: [autenticadoGuard],
+    loadComponent: () => import('./pages/inicio.component').then((m) => m.InicioComponent),
+    title: 'Início · JcardApp',
+  },
+  {
     path: 'faturas',
     canActivate: [autenticadoGuard],
     loadComponent: () => import('./pages/faturas.component').then((m) => m.FaturasComponent),
@@ -68,6 +74,6 @@ export const rotas: Routes = [
       import('./pages/admin-cartoes.component').then((m) => m.AdminCartoesComponent),
     title: 'Cartões · JcardApp',
   },
-  { path: '', pathMatch: 'full', redirectTo: 'faturas' },
-  { path: '**', redirectTo: 'faturas' },
+  { path: '', pathMatch: 'full', redirectTo: 'inicio' },
+  { path: '**', redirectTo: 'inicio' },
 ];

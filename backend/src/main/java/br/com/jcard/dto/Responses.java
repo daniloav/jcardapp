@@ -7,6 +7,7 @@ import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
 import br.com.jcard.model.OrigemAtribuicao;
+import br.com.jcard.model.ResumoFatura;
 import br.com.jcard.model.StatusAcerto;
 import br.com.jcard.model.StatusFatura;
 import br.com.jcard.model.TipoLancamento;
@@ -73,6 +74,14 @@ public final class Responses {
         public static FaturaResponse de(Fatura f, int totalLancamentos, int noPool, int emConflito) {
             return new FaturaResponse(f.id, f.competencia, f.vencimento, f.valorTotal,
                     f.valorLancado, f.divergencia(), f.status, f.emissor, f.importadaEm,
+                    totalLancamentos, noPool, emConflito);
+        }
+
+        /** A partir da projeção da listagem, que não carrega o texto da fatura. */
+        public static FaturaResponse de(ResumoFatura f, int totalLancamentos, int noPool,
+                                        int emConflito) {
+            return new FaturaResponse(f.id(), f.competencia(), f.vencimento(), f.valorTotal(),
+                    f.valorLancado(), f.divergencia(), f.status(), f.emissor(), f.importadaEm(),
                     totalLancamentos, noPool, emConflito);
         }
     }

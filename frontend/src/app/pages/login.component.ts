@@ -71,7 +71,7 @@ export class LoginComponent {
       next: (r) => {
         this.carregando.set(false);
         // Senha provisória: a pessoa não chega a ver o app antes de trocar.
-        this.router.navigate([r.precisaTrocarSenha ? '/trocar-senha' : '/faturas']);
+        this.router.navigate([r.precisaTrocarSenha ? '/trocar-senha' : '/inicio']);
       },
       error: () => this.carregando.set(false),
     });

@@ -121,11 +121,11 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 94 testes, incluindo as duas
+- **Backend**: `cd backend && mvn -B verify` — 98 testes, incluindo as duas
   invariantes de conciliação, a divisão de contas, o rateio de encargos, o ciclo
   de pagamento com comprovante, a herança de parcela, a reabertura da avaliação,
-  o fluxo da API por HTTP e os dois leitores de fatura contra fixtures
-  anonimizados (`fatura-itau-exemplo.csv` e `.txt`).
+  o fluxo da API por HTTP, as contagens agregadas da listagem e os dois leitores
+  de fatura contra fixtures anonimizados (`fatura-itau-exemplo.csv` e `.txt`).
 - **Frontend**: `cd frontend && npx ng build`.
 - O perfil `%test` usa o banco **`jcard_test`** com `flyway.clean-at-start` — nunca
   aponte para o banco de dev, ele é apagado a cada execução.
@@ -192,6 +192,16 @@ com troca de senha obrigatória.
   os lançamentos nascem no pool, que é o fluxo normal.
 - **Regexes do parser na configuração** (`jcard.parser.itau.*`): layout de banco
   muda, e calibrar não pode exigir recompilar.
+- **A listagem de faturas não carrega faturas.** `GET /api/faturas` alimenta a
+  lista e o gráfico da tela inicial, e responde em **três consultas fixas**: o
+  cabeçalho de todos os meses via projeção (`ResumoFatura`, que deixa o
+  `texto_extraido` no banco — eram 525 kB de texto por requisição num ano de
+  faturas) mais duas agregações (`Lancamento.contagensPorFatura` e
+  `Reivindicacao.conflitosPorFatura`). Antes eram três consultas **por fatura**, e
+  uma delas carregava o pool inteiro só para chamar `size()`. Com o banco no Neon
+  cada ida e volta custa latência de rede: era isso que fazia a primeira tela
+  demorar. As contagens agregadas têm de responder o mesmo que o caminho por
+  fatura — é o que `ListagemDeFaturasTest` defende.
 - **O service worker não cacheia `/api`.** Dado financeiro não pode sobrar no
   disco do navegador nem ser servido desatualizado.
 - **Privacidade**: o utilizador vê o pool e as próprias contas — nunca o que
@@ -231,8 +241,12 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 94 testes verdes (`mvn verify`).
-- ✅ Frontend Angular 17 + PWA compilando (85 kB no bundle inicial).
+- ✅ Backend completo, 98 testes verdes (`mvn verify`).
+- ✅ Frontend Angular 17 + PWA compilando (87 kB no bundle inicial).
+- ✅ **Tela inicial (`/inicio`)** — é onde o login cai: gráfico das faturas por mês
+   (fechada, em andamento, divergente), os dois totais e "precisa de você", que
+   muda de conteúdo para admin e para utilizador. Conferida no app rodando, no
+   desktop e no tamanho de celular.
 - ✅ Conta dividida, encargo rateado, aceite com comprovante de PIX e exclusão de
    fatura — implementados e conferidos no app rodando.
 - ✅ **Fluxo de indicação (ROADMAP §2)** — reabrir a avaliação, admin atribuir

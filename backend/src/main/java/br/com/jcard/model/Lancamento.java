@@ -89,7 +89,45 @@ public class Lancamento extends EntidadeBase {
     /** O pool: sem dono e reivindicável. É a tela principal do utilizador. */
     public static List<Lancamento> poolDaFatura(Long faturaId) {
         return list("fatura.id = ?1 and responsavel is null and tipo in ?2 order by dataCompra, id",
-                faturaId, List.of(TipoLancamento.COMPRA, TipoLancamento.ESTORNO));
+                faturaId, tiposDoPool());
+    }
+
+    /** Quantos lançamentos a fatura tem e quantos ainda estão no pool. */
+    public record Contagem(long total, long noPool) {
+        public static final Contagem VAZIA = new Contagem(0, 0);
+    }
+
+    /**
+     * As contagens de <b>todas</b> as faturas numa consulta só.
+     *
+     * <p>A listagem antes perguntava por fatura, e uma das perguntas era
+     * {@code poolDaFatura(id).size()} — que carrega os lançamentos inteiros para
+     * contar quantos são. Com um ano de faturas de 514 linhas isso significava
+     * trazer o cartão de crédito da família toda do banco para descobrir três
+     * números por mês.
+     */
+    public static java.util.Map<Long, Contagem> contagensPorFatura() {
+        java.util.Map<Long, Contagem> mapa = new java.util.HashMap<>();
+        getEntityManager().createQuery("""
+                select l.fatura.id, count(l.id),
+                       sum(case when l.responsavel is null and l.tipo in :pool then 1 else 0 end)
+                  from Lancamento l
+                 group by l.fatura.id
+                """, Object[].class)
+                .setParameter("pool", tiposDoPool())
+                .getResultList()
+                .forEach(linha -> mapa.put((Long) linha[0],
+                        new Contagem(((Number) linha[1]).longValue(),
+                                ((Number) linha[2]).longValue())));
+        return mapa;
+    }
+
+    /**
+     * O que pode estar no pool: compra e estorno. Encargo não entra — ele não é
+     * de ninguém em particular, é rateado.
+     */
+    private static List<TipoLancamento> tiposDoPool() {
+        return List.of(TipoLancamento.COMPRA, TipoLancamento.ESTORNO);
     }
 
     /**
