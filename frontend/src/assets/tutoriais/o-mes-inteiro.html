@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JcardApp — Guia: O mês inteiro</title>
+<link rel="stylesheet" href="player.css">
+<style>
+  /* Mapa das seis etapas: é a cena que dá o esqueleto do guia inteiro. */
+  /* align-content:center centra a fileira no palco; align-items:flex-start mantém
+     as seis bolinhas alinhadas entre si mesmo com legendas de alturas diferentes. */
+  .mapa{ flex:1; display:flex; align-items:flex-start; align-content:center; justify-content:center;
+         gap:0; background:var(--ap-bg); padding:clamp(14px,4vw,30px); flex-wrap:wrap; }
+  .et{ text-align:center; width:104px; }
+  .et .bola{ width:36px; height:36px; border-radius:50%; margin:0 auto 6px; display:grid; place-items:center;
+             background:var(--ap-surface); border:2px solid var(--ap-border); font-size:16px; }
+  .et.on .bola{ background:var(--ap-azul); border-color:var(--ap-azul); color:#fff; }
+  .et b{ display:block; font-size:11px; }
+  .et .txt{ display:block; color:var(--ap-muted); font-size:9px; line-height:1.4; margin-top:2px; }
+  .liga{ height:2px; width:18px; background:var(--ap-border); margin-top:17px; }
+  @media (max-width:560px){ .liga{ display:none; } .et{ width:44%; margin-bottom:10px; } }
+
+  /* Quem faz a etapa é metade da informação — vai num selo, não no texto corrido. */
+  .quem{ display:inline-block; margin:3px 0 1px; font-size:8.5px; font-weight:800; letter-spacing:.06em;
+         text-transform:uppercase; padding:2px 7px; border-radius:99px; }
+  .quem.adm{ background:var(--ap-azul-suave); color:var(--ap-azul); }
+  .quem.tod{ background:#d9f2ef; color:#0d6e66; }
+
+  .etapa{ display:inline-flex; align-items:center; gap:6px; font-size:9px; font-weight:800; letter-spacing:.08em;
+          text-transform:uppercase; color:var(--ap-muted); margin-bottom:5px; }
+  .etapa i{ font-style:normal; background:var(--ap-azul); color:#fff; width:16px; height:16px; border-radius:50%;
+            display:grid; place-items:center; font-size:9px; }
+
+  .fld{ margin-bottom:7px; }
+  .fld label{ display:block; font-size:9.5px; color:var(--ap-muted); margin-bottom:3px; }
+  .inp{ border:1px solid var(--ap-border); background:var(--ap-surface); border-radius:8px;
+        padding:6px 9px; font-size:10.5px; color:var(--ap-ink); }
+  .inp.file{ display:flex; align-items:center; gap:7px; color:var(--ap-muted); }
+  .inp.file .chip{ background:var(--ap-bg); border:1px solid var(--ap-border); border-radius:6px;
+                   padding:2px 7px; font-size:9.5px; color:var(--ap-ink); }
+  .pixbox{ background:#e6f7f5; border:1px solid #bfe6e1; border-radius:9px; padding:8px 11px; }
+  .pixbox .k{ font-size:12px; font-weight:700; word-break:break-all; }
+  .pixbox .t{ color:var(--ap-muted); font-size:9.5px; }
+
+  /* Lista de transferências do acerto, como o admin vê na conciliação. */
+  .transf{ list-style:none; margin:6px 0 0; padding:0; }
+  /* flex-wrap porque no celular a coluna do mockup não comporta data, valor,
+     comprovante e botão na mesma linha — sem quebrar, ela corta o botão. */
+  .transf li{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:5px 0;
+              border-bottom:1px solid var(--ap-border); font-size:10px; }
+  .transf li:last-child{ border-bottom:0; }
+  .transf strong{ font-size:11px; }
+  .transf .lk{ color:var(--ap-azul2); text-decoration:underline; font-size:9.5px; }
+  .falta{ color:var(--ap-warn); font-weight:700; }
+
+  /* Explicação à esquerda, botão à direita. */
+  .linha-acao{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .linha-acao .txt{ flex:1; color:var(--ap-muted); font-size:9.5px; }
+
+  @media (max-width:560px){
+    /* O palco é baixo e cada subtexto vira três linhas. Na cena da conciliação
+       isso empurrava o botão "Conciliar" — o ponto da cena — para fora da tela,
+       então lá o detalhe de cada acerto sai e o botão fica. */
+    .compacto .lin .m{ display:none; }
+    /* E lado a lado sobra tão pouca largura para a explicação que ela quebra
+       numa palavra por linha; empilhada, as duas coisas ficam legíveis. */
+    .linha-acao{ flex-direction:column; align-items:flex-start; }
+    /* No pool o nome do estabelecimento já ocupa três linhas e o "Foi minha"
+       ficava cortado na borda; deixando a linha quebrar, o botão desce inteiro. */
+    .pool .lin{ flex-wrap:wrap; }
+    .pool .lin > div:last-child{ margin-left:auto; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="brand"><span class="bk">🗓️</span> JcardApp <small>· Guia de uso</small></div>
+    <div class="step"><span id="stepNow">1</span> / <span id="stepTot">12</span> · O mês inteiro</div>
+  </div>
+  <div class="player">
+    <div class="stage" id="stage">
+
+      <section class="scene on">
+        <div class="cover">
+          <div class="bk">🗓️</div>
+          <h1>O mês inteiro</h1>
+          <div class="rule"></div>
+          <p>Da fatura que chega até o último comprovante confirmado — e quem faz o quê em cada etapa.</p>
+          <div class="tagl">Visão geral</div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="mapa">
+          <div class="et on">
+            <div class="bola">📥</div><b>Importa</b>
+            <span class="quem adm">admin</span>
+            <span class="txt">sobe o CSV e informa o total</span>
+          </div>
+          <div class="liga"></div>
+          <div class="et on">
+            <div class="bola">🙋</div><b>Assume</b>
+            <span class="quem tod">todos</span>
+            <span class="txt">cada um marca o que é seu</span>
+          </div>
+          <div class="liga"></div>
+          <div class="et on">
+            <div class="bola">🧮</div><b>Concilia</b>
+            <span class="quem adm">admin</span>
+            <span class="txt">fecha o rateio e congela os valores</span>
+          </div>
+          <div class="liga"></div>
+          <div class="et on">
+            <div class="bola">✍️</div><b>Aceita</b>
+            <span class="quem tod">cada um</span>
+            <span class="txt">concorda com o próprio valor</span>
+          </div>
+          <div class="liga"></div>
+          <div class="et on">
+            <div class="bola">💸</div><b>Paga</b>
+            <span class="quem tod">cada um</span>
+            <span class="txt">PIX e comprovante</span>
+          </div>
+          <div class="liga"></div>
+          <div class="et on">
+            <div class="bola">✅</div><b>Confirma</b>
+            <span class="quem adm">admin</span>
+            <span class="txt">confere no extrato e fecha</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <div class="grp">Administração</div>
+            <a class="act"><span class="ic">📥</span> Importar fatura</a>
+            <a><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">👥</span> Utilizadores</a>
+          </nav>
+          <div class="main">
+            <div class="etapa"><i>1</i> Etapa 1 de 6 · administrador</div>
+            <h4>Importar fatura</h4>
+            <div class="sub">O app quebra os lançamentos e avisa todos por e-mail.</div>
+            <div class="cardui">
+              <div class="fld"><label>Competência (mês da fatura)</label><div class="inp">03/2026</div></div>
+              <div class="fld"><label>Arquivo da fatura (.csv ou .pdf)</label>
+                <div class="inp file"><span class="chip">📎 fatura-itau-032026.csv</span> 514 linhas</div>
+              </div>
+              <div class="fld"><label>Valor total</label><div class="inp glow">3.456,78</div></div>
+              <span class="btnp">Importar</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">O total é a trava</b>
+            <span>O app soma os lançamentos que leu e <span class="destaque">compara com o
+            total impresso na fatura</span>.</span>
+            <span style="margin-top:8px">Se não bater, a fatura fica
+            <span class="destaque">divergente</span> e nada avança: ninguém é avisado, ninguém
+            assume nada. Ratear em cima de leitura errada cobraria valor errado de alguém.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:200px; max-width:290px">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <b style="font-size:11.5px">Fatura de 03/2026</b>
+              <span class="pill r">divergente</span>
+            </div>
+            <div class="lin"><div><div class="d">Total impresso</div></div><div class="v">R$ 3.456,78</div></div>
+            <div class="lin"><div><div class="d">Soma dos lançamentos</div><div class="m">514 linhas lidas</div></div><div class="v">R$ 3.402,10</div></div>
+            <div class="lin"><div><div class="d falta">Diferença</div></div><div class="v falta">R$ 54,68</div></div>
+            <div class="m" style="color:var(--ap-muted); font-size:9.5px; margin-top:7px">
+              O administrador corrige e importa de novo.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <div class="etapa"><i>2</i> Etapa 2 de 6 · todos</div>
+            <h4>Fatura de 03/2026</h4>
+            <div class="sub">Chegou um e-mail para cada utilizador: "tem fatura para avaliar".</div>
+            <div class="cardui pool">
+              <div class="grph">Sem dono (38) <span>toque no que foi seu</span></div>
+              <div class="lin"><div><div class="d">Farmácia Pague Menos</div><div class="m">07/03</div></div>
+                <div style="display:flex; align-items:center; gap:8px"><div class="v">R$ 96,70</div><span class="btns glow">Foi minha</span></div></div>
+              <div class="lin"><div><div class="d">Magazine Luiza</div><div class="m">12/03 · parcela 1/10</div></div>
+                <div style="display:flex; align-items:center; gap:8px"><div class="v">R$ 189,90</div><span class="btns">Foi minha</span></div></div>
+              <div class="lin"><div><div class="d">Posto Shell Centro</div><div class="m">14/03</div></div>
+                <div style="display:flex; align-items:center; gap:8px"><div class="v">R$ 210,00</div><span class="btns">Foi minha</span></div></div>
+            </div>
+            <div class="cardui" style="margin-top:8px">
+              <div class="m" style="color:var(--ap-muted); font-size:9.5px">
+                Ainda em avaliação: o seu total pode mudar enquanto houver lançamento sem dono.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">Três coisas nesta etapa</b>
+            <span><span class="destaque">Parcela gruda.</span> Assumiu a 1/10, as outras nove já
+            nascem no seu nome nas próximas faturas.</span>
+            <span style="margin-top:7px"><span class="destaque">Conta pode ser rachada.</span>
+            Se a compra foi de mais de uma pessoa, cada uma paga só a sua parte.</span>
+            <span style="margin-top:7px"><span class="destaque">Conflito não é corrida.</span>
+            Se duas marcarem a mesma compra, ela volta para a lista e o administrador decide.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:200px; max-width:280px">
+            <div style="font-weight:700; font-size:11.5px; margin-bottom:5px">Magazine Luiza</div>
+            <div class="m" style="color:var(--ap-muted); font-size:9.5px">12/03 · parcela 1/10 · R$ 189,90</div>
+            <div class="lin" style="margin-top:7px"><div><div class="d">Você</div><div class="m">metade</div></div><div class="v">R$ 94,95</div></div>
+            <div class="lin"><div><div class="d">Maria</div><div class="m">metade</div></div><div class="v">R$ 94,95</div></div>
+            <div class="m" style="color:var(--ap-muted); font-size:9.5px; margin-top:7px">
+              As partes somam exatamente o valor da compra.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <div class="grp">Administração</div>
+            <a><span class="ic">📥</span> Importar fatura</a>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+          </nav>
+          <div class="main">
+            <div class="etapa"><i>3</i> Etapa 3 de 6 · administrador</div>
+            <h4>Conciliação · 03/2026</h4>
+            <div class="sub">A soma dos acertos reproduz o total da fatura.</div>
+            <div class="cardui compacto">
+              <div class="grph">Acertos por pessoa <span>R$ 3.456,78</span></div>
+              <div class="lin"><div><div class="d">Você</div><div class="m">R$ 372,10 em compras + R$ 14,10 de encargos</div></div><div class="v">R$ 386,20</div></div>
+              <div class="lin"><div><div class="d">Maria</div><div class="m">R$ 1.180,40 em compras + R$ 14,10 de encargos</div></div><div class="v">R$ 1.194,50</div></div>
+              <div class="lin"><div><div class="d">José (titular)</div><div class="m">inclui o que ninguém assumiu</div></div><div class="v">R$ 1.876,08</div></div>
+            </div>
+            <div class="cardui linha-acao" style="margin-top:8px">
+              <span class="txt">
+                Conciliar atribui ao titular tudo que ficou sem dono e congela o rateio.
+              </span>
+              <span class="btnp glow">Conciliar (38 sem dono → titular)</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="duo">
+          <div class="callout">
+            <b class="t">É aqui que o seu valor congela</b>
+            <span>E ele pode ter <span class="destaque">mudado no último minuto</span>: os
+            encargos do cartão — IOF, anuidade, juros — são divididos entre quem usou o cartão.</span>
+            <span style="margin-top:8px">Antes de conciliar, só quem assumiu alguma compra
+            entrava nessa divisão. Ao ficar com as sobras, o titular também passa a entrar —
+            e a sua parte do encargo cai.</span>
+          </div>
+          <div class="cardui" style="flex:1; min-width:200px; max-width:280px">
+            <div style="font-weight:700; font-size:11.5px; margin-bottom:6px">Encargos de R$ 42,30</div>
+            <div class="lin"><div><div class="d">Antes de conciliar</div><div class="m">2 pessoas com compras</div></div><div class="v">R$ 21,15</div></div>
+            <div class="lin"><div><div class="d">Depois de conciliar</div><div class="m">3 pessoas — o titular entrou</div></div><div class="v">R$ 14,10</div></div>
+            <div class="m" style="color:var(--ap-muted); font-size:9.5px; margin-top:7px">
+              A sobra de centavos fica com o titular. A conta fecha ao centavo.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <div class="etapa"><i>4</i> Etapa 4 de 6 · cada um</div>
+            <h4>Minhas contas · 03/2026</h4>
+            <div class="sub">Fatura conciliada · o valor está fechado</div>
+            <div class="cardui">
+              <div style="display:flex; justify-content:space-between; align-items:center">
+                <b style="font-size:11.5px">Seu total nesta fatura</b>
+                <span style="font-weight:700; font-size:15px">R$ 386,20</span>
+              </div>
+              <div class="m" style="color:var(--ap-muted); font-size:9.5px">R$ 372,10 em compras + R$ 14,10 de encargos rateados</div>
+              <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center">
+                <span class="pill gray">a conferir</span>
+                <span class="btnp glow">Conferi e aceito o valor</span>
+              </div>
+            </div>
+            <div class="cardui" style="margin-top:8px">
+              <div class="grph">Minhas contas (4) <span>confira antes de aceitar</span></div>
+              <div class="lin meu"><div><div class="d">Farmácia Pague Menos</div><div class="m">07/03</div></div><div class="v">R$ 96,70</div></div>
+              <div class="lin meu"><div><div class="d">Magazine Luiza</div><div class="m">12/03 · parcela 1/10 · conta dividida</div></div><div class="v">R$ 94,95</div></div>
+              <div class="lin meu"><div><div class="d">Encargos rateados</div><div class="m">divididos entre 3 pessoas</div></div><div class="v">R$ 14,10</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+            <a><span class="ic">💸</span> Meus acertos</a>
+          </nav>
+          <div class="main">
+            <div class="etapa"><i>5</i> Etapa 5 de 6 · cada um</div>
+            <h4>Pagar</h4>
+            <div class="sub">R$ 386,20 · aceito em 02/04/2026</div>
+            <div class="pixbox">
+              <div class="t">Chave PIX (e-mail) · José Oliveira</div>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:3px">
+                <span class="k">jose.oliveira&#64;email.com</span>
+                <span class="btns">Copiar chave</span>
+              </div>
+            </div>
+            <div class="cardui" style="margin-top:9px">
+              <div class="fld"><label>Valor pago</label>
+                <div class="inp">em branco = tudo que falta (R$ 386,20)</div>
+              </div>
+              <div class="fld"><label>Data do pagamento</label><div class="inp">02/04/2026</div></div>
+              <div class="fld"><label>Comprovante do PIX ou da transferência</label>
+                <div class="inp file glow"><span class="chip">📎 comprovante-pix.png</span> até 3 MB</div>
+              </div>
+              <span class="btnp">Declarar pagamento</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="app">
+          <nav class="side">
+            <div class="mk"><b>💳 JcardApp</b><span>v1.0.0</span></div>
+            <div class="grp">Administração</div>
+            <a class="act"><span class="ic">🧾</span> Faturas</a>
+          </nav>
+          <div class="main">
+            <div class="etapa"><i>6</i> Etapa 6 de 6 · administrador</div>
+            <h4>Recebimentos · 03/2026</h4>
+            <div class="sub">Uma transferência por linha — o admin confere uma de cada vez no extrato.</div>
+            <div class="cardui">
+              <div style="display:flex; justify-content:space-between; align-items:center">
+                <b style="font-size:11.5px">Você</b>
+                <span style="font-weight:700; font-size:12px">R$ 386,20</span>
+              </div>
+              <div class="m" style="color:var(--ap-muted); font-size:9.5px">
+                pago R$ 100,00 · <strong class="falta">faltam R$ 286,20</strong>
+              </div>
+              <ul class="transf">
+                <li><span>28/03</span><strong>R$ 100,00</strong><span class="lk">comprovante</span><span class="pill g">recebido</span></li>
+                <li><span>02/04</span><strong>R$ 286,20</strong><span class="lk">comprovante</span><span class="btns glow">Recebi</span></li>
+              </ul>
+            </div>
+            <div class="cardui linha-acao" style="margin-top:8px">
+              <span class="txt">
+                Fechar exige que todos os pagamentos estejam confirmados.
+              </span>
+              <span class="btns">Fechar fatura</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene">
+        <div class="cover">
+          <div class="bk">✅</div>
+          <h1>Fatura fechada</h1>
+          <div class="rule"></div>
+          <p>Todo mundo pagou, o administrador confirmou, e o mês vira histórico
+             em "Meus acertos". No mês que vem tudo começa de novo — e as parcelas
+             assumidas já vêm com dono.</p>
+          <div class="next">
+            <span class="chip">👋 Primeiro acesso</span>
+            <span class="chip">🙋 Assumir uma conta</span>
+            <span class="chip">🤝 Dividir uma conta</span>
+            <span class="chip">💸 Aceitar e pagar</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="replay" id="replay"><button id="replayBtn">↻ Assistir de novo</button></div>
+    </div>
+    <div class="cap"><p id="caption"></p></div>
+    <div class="ctrl">
+      <button class="btn" id="prev" aria-label="Anterior">⏮</button>
+      <button class="btn play" id="play" aria-label="Pausar">⏸</button>
+      <button class="btn" id="next" aria-label="Próximo">⏭</button>
+      <div class="segs" id="segs"></div>
+    </div>
+  </div>
+  <div class="foot">
+    Guia do JcardApp · avança sozinho — ⏸ pausa, ⏭ / ⏮ navegam (ou as setas do teclado).
+    <a href="index.html">← Voltar aos treinamentos</a>
+  </div>
+</div>
+<script>
+  window.CAPTIONS = [
+    ['Uma fatura chega ', 'e, em algumas semanas, vira o acerto de cada um. Este guia mostra o caminho inteiro, de ponta a ponta.'],
+    ['São seis etapas. ', 'O administrador importa, concilia e confirma. Você assume o que é seu, aceita o valor e paga.'],
+    ['Etapa 1: ', 'o administrador sobe o CSV da fatura e digita o total impresso nela. O app quebra em lançamentos e avisa todo mundo por e-mail.'],
+    ['O total é a trava. ', 'Se a soma dos lançamentos não reproduzir o que está impresso, a fatura trava como divergente e nada avança.'],
+    ['Etapa 2: ', 'todo mundo recebe o e-mail e abre a lista do que está sem dono. Cada um marca o que reconhece como seu.'],
+    ['Ainda na etapa 2: ', 'a parcela assumida gruda nas próximas faturas, uma compra pode ser rachada entre várias pessoas, e se duas marcarem a mesma, ela volta para a lista.'],
+    ['Etapa 3: ', 'o administrador concilia. O que ninguém assumiu fica com o titular do cartão, e a soma dos acertos passa a reproduzir o total da fatura.'],
+    ['É aqui que o seu valor congela ', '— e ele pode cair: o titular entrou na divisão dos encargos, então a parte de cada um diminui.'],
+    ['Etapa 4: ', 'com a fatura conciliada, o botão de aceite aparece. Confira as suas contas linha a linha antes de tocar nele.'],
+    ['Etapa 5: ', 'copie a chave PIX, pague e anexe o comprovante. Dá para pagar em partes — deixe o valor em branco só quando pagar tudo.'],
+    ['Etapa 6: ', 'o administrador confere uma transferência de cada vez no extrato e dá o "recebi". O acerto só fecha quando o saldo zera.'],
+    ['Fechado o último acerto, ', 'a fatura vira histórico. Os outros guias mostram cada etapa de perto — comece pelo "Primeiro acesso".']
+  ];
+  window.DURS = [7000, 10500, 10000, 9500, 9000, 12000, 10500, 10000, 9000, 10500, 10500, 9000];
+</script>
+<script src="player.js"></script>
+</body>
+</html>

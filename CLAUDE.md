@@ -94,7 +94,12 @@ jcardapp/
 │                                       V5__chave_pix_no_banco
 ├── frontend/                   ← Angular 17
 │   ├── Dockerfile.runtime · nginx.conf
-│   └── src/{sw.js, manifest.webmanifest, app/{core,layout,pages}}
+│   └── src/
+│       ├── {sw.js, manifest.webmanifest, app/{core,layout,pages}}
+│       └── assets/tutoriais/  ← guias em HTML puro, fora do Angular (ver §6)
+│                                 index · o-mes-inteiro · primeiro-acesso
+│                                 assumir-conta · dividir-conta · aceitar-e-pagar
+│                                 player.js + player.css (engine compartilhada)
 ├── .github/workflows/          ← ci.yml (build+testes+segurança) · cd.yml (GHCR → pull na VM)
 ├── scripts/                    ← gcp-provisionar · gcp-bootstrap · duckdns-update · gen-jwt-keys
 │                                  verificar-custo-zero · oci-* (plano B, ver §8)
@@ -253,6 +258,19 @@ com troca de senha obrigatória.
   acerto — é aí que mora a pergunta "esse encargo foi rateado com ela?" —, e
   compara o acerto gravado com o rateio de agora, que é o que denuncia acerto
   congelado.
+- **Os treinamentos são HTML puro, fora do Angular.** Quem chega pelo link do
+  login ainda não entrou no app, então o guia não pode depender de rota
+  autenticada — e tutorial não pode engordar o bundle de quem só quer pagar a
+  conta. São páginas estáticas em `assets/tutoriais/`, com uma engine
+  compartilhada (`player.js` toca as cenas, `player.css` desenha o mockup do
+  app). Cada guia declara `CAPTIONS` e `DURS` e marca as `<section class="scene">`.
+  O mockup é retratado numa tela **clara nos dois temas**: por isso a tinta sai
+  de `--ap-ink`, e não de `--ink`, que no tema escuro sumiria no branco do cartão.
+- **`o-mes-inteiro.html` é o panorama; os outros quatro são o close.** As regras
+  existiam só espalhadas por etapa, e ninguém remontava a sequência sozinho —
+  ele mostra as seis etapas do mês e **quem faz cada uma**, admin e utilizador
+  lado a lado. É o primeiro card da central justamente porque dá sentido aos
+  outros.
 - **O service worker não cacheia `/api`.** Dado financeiro não pode sobrar no
   disco do navegador nem ser servido desatualizado.
 - **Privacidade**: o utilizador vê o pool e as próprias contas — nunca o que
@@ -319,6 +337,14 @@ com troca de senha obrigatória.
    variável de ambiente, o que fazia trocar a chave exigir ssh na VM. O `.env`
    continua como valor inicial. Conferida no app rodando (salvar pela tela e a
    chave nova aparecendo na tela de pagamento da pessoa) e no tamanho de celular.
+- ✅ **Treinamento do fluxo completo (`o-mes-inteiro.html`)** — 12 cenas cobrindo
+   importar → assumir → conciliar → aceitar → pagar → confirmar, com selo de quem
+   faz cada etapa. Entrou como primeiro card da central de treinamentos, que é
+   onde cai o link "Primeira vez? Veja como usar o app" do login. Conferido cena a
+   cena no app rodando, no desktop e no tamanho de celular. No caminho corrigiu
+   três defeitos do `player.css` que afetavam os **quatro guias antigos**: texto do
+   mockup invisível no tema escuro, `.destaque` quebrando linha no meio da frase e
+   coluna do mockup estourando a largura no celular.
 - ✅ CI/CD escritos; o CD roda em **modo mock** enquanto os secrets `OCI_*`
   estiverem vazios — a esteira fica verde antes de as VMs existirem.
 - ⏳ **VM ainda não provisionada.** Migramos de Oracle para GCP + Neon depois de
