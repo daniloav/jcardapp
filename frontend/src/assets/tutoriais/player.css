@@ -38,7 +38,10 @@ body{ margin:0; }
 
 .player{ width:100%; max-width:900px; background:var(--card); border:1px solid var(--line);
   border-radius:18px; box-shadow:var(--shadow); overflow:hidden; }
-.stage{ position:relative; aspect-ratio:16/9; background:var(--ap-bg); overflow:hidden; }
+/* O palco retrata a tela do app, que é clara nos dois temas — por isso a tinta
+   sai de --ap-ink e não de --ink. Sem isso, no tema escuro o texto dos mockups
+   herda o claro da página e some no branco do cartão. A capa sobrescreve. */
+.stage{ position:relative; aspect-ratio:16/9; background:var(--ap-bg); color:var(--ap-ink); overflow:hidden; }
 /* No celular a tela deitada corta os mockups; em pé cabe a lista inteira. */
 @media (max-width:560px){ .stage{ aspect-ratio:4/5; } }
 
@@ -78,7 +81,10 @@ body{ margin:0; }
   border-left:3px solid transparent; text-decoration:none; }
 .side a.act{ background:rgba(20,184,166,.18); color:#fff; border-left-color:var(--ap-acc); font-weight:600; }
 .side a .ic{ width:15px; text-align:center; }
-.main{ flex:1; background:var(--ap-bg); padding:16px 18px; overflow:hidden; }
+/* min-width:0 porque o padrão do flex é min-width:auto: um filho que não quebra
+   (uma linha larga demais) esticaria a coluna e empurraria o mockup para fora
+   do palco, cortando tudo à direita em vez de só a linha culpada. */
+.main{ flex:1; min-width:0; background:var(--ap-bg); padding:16px 18px; overflow:hidden; }
 .main h4{ margin:0 0 3px; font-size:16px; color:var(--ap-ink); }
 .main .sub{ color:var(--ap-muted); font-size:11px; margin-bottom:12px; }
 .cardui{ background:var(--ap-surface); border:1px solid var(--ap-border); border-radius:10px; padding:12px 14px; box-shadow:0 1px 3px rgba(16,40,52,.06); }
@@ -123,7 +129,9 @@ body{ margin:0; }
 .callout{ flex:1; min-width:190px; max-width:300px; }
 .callout b.t{ font-size:clamp(1.05rem,3.4vw,1.35rem); color:var(--ap-ink); display:block; margin-bottom:6px; }
 .callout span{ color:var(--ap-muted); font-size:12.5px; line-height:1.55; display:block; }
-.callout .destaque{ color:var(--ap-ink); font-weight:600; }
+/* display:inline porque o destaque grifa um trecho no meio da frase — sem ele
+   herda o block do .callout span e quebra a linha, largando a pontuação sozinha. */
+.callout .destaque{ display:inline; color:var(--ap-ink); font-weight:600; }
 
 .replay{ position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(12,26,34,.6); z-index:5; }
 .replay.show{ display:flex; }

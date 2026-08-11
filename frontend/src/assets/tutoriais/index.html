@@ -49,6 +49,16 @@
   .ordem{ position:absolute; top:16px; right:16px; font-size:.66rem; font-weight:800; letter-spacing:.05em;
     text-transform:uppercase; padding:4px 9px; border-radius:99px; background:var(--em); color:var(--em-ink); }
 
+  /* A visão geral ocupa a linha inteira: ela não é "mais um dos quatro", é o
+     mapa que dá sentido aos outros — quem chega perdido precisa vê-la primeiro. */
+  a.guia.panorama{ grid-column:1/-1; border-color:color-mix(in srgb,var(--acc-2) 45%,var(--line)); }
+  a.guia.panorama .ico{ background:color-mix(in srgb,var(--acc) 16%,transparent); }
+  .etapas{ display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 8px; }
+  .etapas span{ font-size:.7rem; font-weight:700; color:var(--ink-soft); background:var(--paper);
+    border:1px solid var(--line); border-radius:99px; padding:3px 9px; }
+  .etapas span::after{ content:"→"; margin-left:7px; color:var(--acc); font-weight:800; }
+  .etapas span:last-child::after{ content:none; }
+
   .tip{ margin-top:26px; text-align:center; color:var(--ink-soft); font-size:.82rem; line-height:1.6; }
   .tip b{ color:var(--ink); }
   footer{ margin-top:30px; text-align:center; color:var(--ink-soft); font-size:.76rem; }
@@ -65,10 +75,24 @@
       <h1>Central de treinamentos</h1>
       <div class="rule"></div>
       <p>Guias curtos e ilustrados para <b>aprender a usar o app</b>.
-         Cada um passa sozinho, com legendas — é só assistir.</p>
+         Cada um passa sozinho, com legendas — é só assistir.
+         Comece pela <b>visão geral</b> para entender o mês inteiro; os outros
+         mostram cada etapa de perto.</p>
     </header>
 
     <div class="grid">
+      <a class="guia panorama" href="o-mes-inteiro.html">
+        <span class="ordem">Visão geral</span>
+        <div class="top"><div class="ico">🗓️</div><h2>O mês inteiro</h2></div>
+        <div class="desc">O caminho completo da fatura, do arquivo que o administrador sobe até
+          o último comprovante confirmado — e quem faz o quê em cada etapa.</div>
+        <div class="etapas">
+          <span>Importa</span><span>Assume</span><span>Concilia</span>
+          <span>Aceita</span><span>Paga</span><span>Confirma</span>
+        </div>
+        <span class="cta">Assistir →</span>
+      </a>
+
       <a class="guia" href="primeiro-acesso.html">
         <span class="ordem">Comece aqui</span>
         <div class="top"><div class="ico">👋</div><h2>Primeiro acesso</h2></div>
