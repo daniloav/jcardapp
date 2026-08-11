@@ -621,6 +621,15 @@ td > .pagamentos { min-width: 15rem; }
     /* quebra em telas estreitas em vez de estourar o cartão */
     word-break: break-all;
   }
+
+  /* Sem chave configurada: o mesmo bloco em tom de aviso, para não parecer que
+     o app está oferecendo algo para copiar. */
+  &.pendente {
+    background: #fdf3d7;
+    border-color: #ecd9a0;
+
+    p { margin: 0.35rem 0 0; }
+  }
 }
 
 /* ------------------------------------------------------------ etiquetas -- */

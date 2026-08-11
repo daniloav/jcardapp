@@ -8,6 +8,7 @@ import br.com.jcard.model.Acerto;
 import br.com.jcard.model.Cartao;
 import br.com.jcard.model.ComprovantePagamento;
 import br.com.jcard.model.CompromissoParcelado;
+import br.com.jcard.model.ConfiguracaoPix;
 import br.com.jcard.model.DivisaoLancamento;
 import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
@@ -50,6 +51,8 @@ class ApiFluxoTest {
         Lancamento.deleteAll();
         Fatura.deleteAll();
         Cartao.deleteAll();
+        // Antes do usuário: a chave salva aponta para quem a trocou.
+        ConfiguracaoPix.deleteAll();
         Usuario.deleteAll();
 
         Usuario admin = new Usuario();
@@ -284,9 +287,57 @@ class ApiFluxoTest {
     void chavePix() {
         given().auth().oauth2(trocarESeguir()).when().get("/api/pix")
             .then().statusCode(200)
-                .body("tipo", equalTo("CPF"))
-                .body("chave", notNullValue())
-                .body("titular", notNullValue());
+                .body("tipo", equalTo("E-MAIL"))
+                .body("chave", equalTo("teste@exemplo.com"))
+                .body("titular", notNullValue())
+                // É esta flag que autoriza a tela a mostrar o botão de copiar.
+                .body("configurada", equalTo(true))
+                // Nada salvo ainda: quem responde é o .env da instalação.
+                .body("origem", equalTo("AMBIENTE"));
+    }
+
+    @Test
+    @DisplayName("o admin troca a chave PIX pela tela, sem entrar na VM")
+    void adminTrocaAChavePix() {
+        String admin = trocarESeguir();
+        given().contentType(ContentType.JSON).auth().oauth2(admin)
+                .body("""
+                        {"tipo":"E-MAIL","chave":"jose@exemplo.com","titular":"Jose Titular"}""")
+            .when().put("/api/pix")
+            .then().statusCode(200)
+                .body("chave", equalTo("jose@exemplo.com"))
+                .body("origem", equalTo("APP"));
+
+        // E é a nova que a tela de pagamento passa a mostrar.
+        given().auth().oauth2(admin).when().get("/api/pix")
+            .then().statusCode(200)
+                .body("chave", equalTo("jose@exemplo.com"))
+                .body("titular", equalTo("Jose Titular"))
+                .body("origem", equalTo("APP"));
+    }
+
+    @Test
+    @DisplayName("chave em branco é recusada com 400, e a anterior continua valendo")
+    void chavePixEmBrancoNaoPassa() {
+        given().contentType(ContentType.JSON).auth().oauth2(trocarESeguir())
+                .body("""
+                        {"tipo":"CPF","chave":"   ","titular":"Jose Titular"}""")
+            .when().put("/api/pix")
+            .then().statusCode(400);
+    }
+
+    @Test
+    @DisplayName("utilizador não troca a chave PIX — é para onde o dinheiro de todos vai")
+    void utilizadorNaoTrocaAChavePix() {
+        String admin = trocarESeguir();
+        criarUtilizador(admin, "Pedro Filho", "pedro@teste.local");
+        String pedro = entrarComoUtilizador("pedro.filho");
+
+        given().contentType(ContentType.JSON).auth().oauth2(pedro)
+                .body("""
+                        {"tipo":"CPF","chave":"111.111.111-11","titular":"Pedro"}""")
+            .when().put("/api/pix")
+            .then().statusCode(403);
     }
 
     @Test
@@ -307,7 +358,8 @@ class ApiFluxoTest {
 
         given().auth().oauth2(admin).when().get("/api/faturas/" + id + "/minhas-contas")
             .then().statusCode(200)
-                .body("pix.chave", notNullValue())
+                .body("pix.chave", equalTo("teste@exemplo.com"))
+                .body("pix.configurada", equalTo(true))
                 .body("total", notNullValue())
                 // A anuidade não entra no pool: ela é rateada, não reivindicada.
                 .body("pool.size()", equalTo(1));

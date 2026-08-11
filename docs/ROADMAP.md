@@ -12,23 +12,26 @@ que ele exigiu, porque são elas que explicam o código.
 
 ## 1. Pendências da entrega de divisão/encargos/comprovante
 
-### 1.1 Decidir onde mora a chave PIX
+### 1.1 Onde mora a chave PIX — ✅ resolvido
 
-**Hoje**: `jcard.pix.*` tem placeholder no `application.properties` e no
-`.env.example`; o CPF e o nome reais só existem no `.env` da VM.
+**Hoje**: o admin define a chave na tela `/admin/pix`, e ela fica na tabela
+`configuracao_pix` (V5). A variável `JCARD_PIX_CHAVE` continua valendo como
+**valor inicial**, usado enquanto ninguém salvar nada pela tela; salvou uma vez,
+o banco manda e mexer no `.env` deixa de ter efeito.
 
-**Por que ficou assim**: `daniloav/jcardapp` é **público**. CPF e nome completo
-versionados viram dado pessoal indexável, e o app não ganha nada com isso —
-lê da variável de ambiente do mesmo jeito.
+**Por que não ficou só no ambiente**: `daniloav/jcardapp` é **público**, então o
+CPF nunca podia ser versionado — isso continua verdade e não mudou. Mas "não
+versionar" não obriga "só editável por ssh": trocar a chave PIX é decisão do dono
+do cartão, e o dono do cartão não abre terminal.
 
-**A decidir**: se o repositório virar privado, dá para trazer os valores reais
-para o `.env.example` e poupar um passo do provisionamento. Enquanto for público,
-fica como está.
+**Por que não ficou só no banco**: uma instalação nova precisa de algum valor
+antes da primeira tela, e o deploy existente já tinha a variável preenchida.
 
-⚠️ **Antes do primeiro deploy**: definir `JCARD_PIX_CHAVE` e `JCARD_PIX_TITULAR`
-no `.env` da VM. Sem isso a tela de pagamento mostra
-`defina JCARD_PIX_CHAVE no .env` no lugar da chave — o default é feio de
-propósito, para o erro aparecer antes de alguém tentar pagar.
+Sem nenhum dos dois, a tela de pagamento diz que a chave não foi configurada e
+**não oferece o botão de copiar** — antes ela exibia o texto do default (`defina
+JCARD_PIX_CHAVE no .env`) como se fosse chave, e copiar aquilo mandaria a pessoa
+pagar para lugar nenhum. O resto do fluxo continua funcionando: quem já recebeu a
+chave por fora ainda declara o pagamento com comprovante.
 
 ### 1.2 Conferir os acertos abertos no primeiro deploy da V2
 

@@ -91,6 +91,7 @@ jcardapp/
 │       └── resources/db/migration/  ← V1__schema · V2__divisao_encargos_comprovante
 │                                       V3__reabertura_e_apelidos
 │                                       V4__pagamento_parcial
+│                                       V5__chave_pix_no_banco
 ├── frontend/                   ← Angular 17
 │   ├── Dockerfile.runtime · nginx.conf
 │   └── src/{sw.js, manifest.webmanifest, app/{core,layout,pages}}
@@ -123,7 +124,7 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 113 testes, incluindo as duas
+- **Backend**: `cd backend && mvn -B verify` — 122 testes, incluindo as duas
   invariantes de conciliação, a atribuição em massa, a divisão de contas, o
   rateio de encargos, o ciclo
   de pagamento com comprovante, a herança de parcela, a reabertura da avaliação,
@@ -160,6 +161,23 @@ com troca de senha obrigatória.
   PIX**, ao contrário, é guardado — ele *é* a prova do acerto. Fica em tabela
   própria (`comprovante_pagamento`) e não numa coluna de `acerto`, senão o
   `byte[]` viajaria junto em toda listagem de acertos do admin.
+- **Chave PIX que falta é uma flag, não um texto.** O default de
+  `jcard.pix.chave` era o próprio recado ("defina JCARD_PIX_CHAVE no .env"), e a
+  tela o exibia como chave, com botão de copiar — copiar aquilo manda a pessoa
+  pagar para lugar nenhum. Hoje a resposta traz `configurada`, e sem chave a tela
+  avisa em vez de oferecer cópia. O tipo é `Optional<String>`: para o SmallRye
+  valor vazio é *ausente*, e ausente numa `String` não é falta de valor, é erro
+  de configuração — o app nem sobe, justamente no caso normal de ninguém ter
+  configurado ainda (é o que `PixSemChaveTest` defende).
+- **A chave PIX tem duas origens, e o banco vence o ambiente.** O admin define a
+  chave em `/admin/pix` (tabela `configuracao_pix`, V5) e `JCARD_PIX_CHAVE` fica
+  como valor inicial, para a instalação nova ter algo antes da primeira tela. A
+  ordem não é arbitrária: se o ambiente vencesse, o admin trocaria a chave, veria
+  a antiga continuar aparecendo para todo mundo e o dinheiro iria para a conta
+  errada. Só ambiente obrigava a entrar por ssh na VM para trocar a chave — o
+  dono do cartão não abre terminal. O CPF continua fora do git nos dois casos.
+  Linha única garantida pelo banco, e toda troca vai para a auditoria com a chave
+  velha e a nova: é a operação que mais mexe em dinheiro dos outros.
 - **O acerto é quitado por N transferências, e o saldo é derivado.** O app
   registrava quanto a pessoa deve e nunca quanto ela pagou: um comprovante por
   acerto, e reenviar substituía. Aí a pessoa paga R$ 100, o total dela sobe no
@@ -274,7 +292,7 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 113 testes verdes (`mvn verify`).
+- ✅ Backend completo, 122 testes verdes (`mvn verify`).
 - ✅ Frontend Angular 17 + PWA compilando (87 kB no bundle inicial).
 - ✅ **Tela inicial (`/inicio`)** — é onde o login cai: gráfico das faturas por mês
    (fechada, em andamento, divergente), os dois totais e "precisa de você", que
@@ -297,6 +315,10 @@ com troca de senha obrigatória.
    resultado inteiro para uma pessoa, com confirmação que diz quantos trocam de
    dono. Conferida no app rodando (11 lançamentos de uma busca real: 8
    atribuídos, 3 já eram da pessoa) e no tamanho de celular.
+- ✅ **Chave PIX editável pelo admin** (`/admin/pix`) — antes só existia como
+   variável de ambiente, o que fazia trocar a chave exigir ssh na VM. O `.env`
+   continua como valor inicial. Conferida no app rodando (salvar pela tela e a
+   chave nova aparecendo na tela de pagamento da pessoa) e no tamanho de celular.
 - ✅ CI/CD escritos; o CD roda em **modo mock** enquanto os secrets `OCI_*`
   estiverem vazios — a esteira fica verde antes de as VMs existirem.
 - ⏳ **VM ainda não provisionada.** Migramos de Oracle para GCP + Neon depois de
@@ -308,5 +330,5 @@ com troca de senha obrigatória.
 - ⏳ Pendências do Danilo: contas GCP e Neon, token do DuckDNS, senha de app do
   Gmail, PAT com `read:packages`.
 - 📋 O que ficou para depois — e por quê — está em `docs/ROADMAP.md`. Em
-  destaque: definir `JCARD_PIX_*` no `.env` da VM antes do primeiro deploy e
+  destaque: definir a chave PIX (pela tela `/admin/pix` ou no `.env` da VM) e
   conferir os acertos abertos quando a V2 subir.

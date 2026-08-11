@@ -138,6 +138,11 @@ export class ApiService {
     return this.http.get<Pix>('/api/pix');
   }
 
+  /** Só admin: troca a chave para onde todo mundo paga. */
+  salvarPix(tipo: string, chave: string, titular: string): Observable<Pix> {
+    return this.http.put<Pix>('/api/pix', { tipo, chave, titular });
+  }
+
   /** "Conferi o total e concordo." É o que libera o formulário de pagamento. */
   aceitarValor(faturaId: number): Observable<Acerto> {
     return this.http.post<Acerto>(`/api/faturas/${faturaId}/aceite`, {});

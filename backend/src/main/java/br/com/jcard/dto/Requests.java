@@ -81,6 +81,20 @@ public final class Requests {
         }
     }
 
+    /**
+     * A chave PIX que o admin define pela tela.
+     *
+     * <p>O tipo é texto livre e não enum: quem lê é gente, na hora de abrir o
+     * app do banco, e uma lista fechada envelheceria com o próximo tipo de
+     * chave que o Banco Central inventar.
+     */
+    public record ChavePix(
+            @NotBlank(message = "Informe o tipo da chave (CPF, e-mail, telefone...)")
+            @Size(max = 20) String tipo,
+            @NotBlank(message = "Informe a chave PIX") @Size(max = 140) String chave,
+            @NotBlank(message = "Informe o nome de quem recebe") @Size(max = 120) String titular) {
+    }
+
     public record Cartao(
             @NotBlank @Size(max = 80) String apelido,
             @NotBlank @Size(min = 4, max = 4, message = "Informe os 4 últimos dígitos")

@@ -372,8 +372,15 @@ ABERTO ──aceite──► ACEITO ──pagamento + comprovante──► INFOR
   PDF, até 3 MB). Sem ele não existe registro de que o dinheiro saiu e a
   confirmação viraria palavra contra palavra. Reenviar substitui **o daquela
   transferência**, para quem mandou o print errado.
-- A chave PIX vem da configuração (`jcard.pix.*`), não do código: é dado pessoal
-  do titular e muda de dono sem recompilar.
+- A chave PIX nunca está no código: é dado pessoal do titular e o repositório é
+  público. Ela é **definida pelo admin na tela** (`/admin/pix`, tabela
+  `configuracao_pix`), e `JCARD_PIX_CHAVE` vale como valor inicial enquanto
+  ninguém tiver salvado nada. Salvou, o banco manda — o contrário faria o admin
+  trocar a chave e o dinheiro continuar indo para a conta antiga. Só admin
+  troca, e toda troca vai para a auditoria com a chave velha e a nova.
+- Sem chave por nenhum dos dois caminhos, a resposta vem com
+  `configurada: false` e a tela **avisa que falta configurar** em vez de mostrar
+  algo copiável: quem copia uma chave confia que ela leva o dinheiro ao titular.
 - **Confirmação** é sempre do admin — o app não tem como saber se o PIX caiu.
 - Um acerto `CONFIRMADO` **não é recalculado** por mudanças posteriores — reabrir
   apagaria a confirmação do admin. Divergência aí é caso de arbitragem manual.
