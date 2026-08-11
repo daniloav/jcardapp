@@ -1,5 +1,6 @@
 package br.com.jcard.resource;
 
+import br.com.jcard.dto.Requests;
 import br.com.jcard.dto.Responses;
 import br.com.jcard.model.Acerto;
 import br.com.jcard.model.ComprovantePagamento;
@@ -10,8 +11,11 @@ import br.com.jcard.service.PixConfig;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -48,6 +52,21 @@ public class AcertoResource {
     public Responses.PixResponse pix() {
         logado.exigirSenhaTrocada();
         return pixConfig.atual();
+    }
+
+    /**
+     * O admin troca a chave PIX pela tela, sem entrar na VM.
+     *
+     * <p>Trocar a chave é decisão do dono do cartão, e o dono do cartão não abre
+     * terminal. Só admin: é para onde o dinheiro de todo mundo vai.
+     */
+    @PUT
+    @Path("/pix")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed(TokenService.ADMIN)
+    public Responses.PixResponse salvarPix(@Valid Requests.ChavePix req) {
+        return pixConfig.salvar(req.tipo(), req.chave(), req.titular(),
+                logado.exigirSenhaTrocada());
     }
 
     /**

@@ -338,7 +338,31 @@ public final class Responses {
                                       BigDecimal diferencaAcerto) {
     }
 
-    /** A chave para onde o dinheiro vai. Vem da configuração, não do código. */
-    public record PixResponse(String tipo, String chave, String titular) {
+    /** De onde saiu a chave PIX que está valendo. */
+    public enum OrigemPix {
+        /** Salva pelo admin na tela; a partir daí é ela que vale. */
+        APP,
+        /** Ainda vem de {@code JCARD_PIX_CHAVE}, o valor inicial da instalação. */
+        AMBIENTE,
+        /** Ninguém configurou, nem por um caminho nem por outro. */
+        NENHUMA
+    }
+
+    /**
+     * A chave para onde o dinheiro vai. Vem da configuração, não do código.
+     *
+     * @param configurada se existe chave para mostrar. Vem separado do texto
+     *                    porque a tela precisa saber a diferença entre "esta é a
+     *                    chave, copie" e "ninguém configurou ainda": oferecer o
+     *                    botão de copiar num aviso de configuração manda a
+     *                    pessoa pagar para lugar nenhum. Quando é {@code false},
+     *                    {@code chave} vem vazia.
+     * @param origem      qual das duas fontes respondeu. Só a tela do admin usa,
+     *                    mas viaja junto para não existir um segundo endpoint
+     *                    que responda quase a mesma coisa: é informação sobre a
+     *                    própria chave, que todo mundo já vê.
+     */
+    public record PixResponse(String tipo, String chave, String titular,
+                              boolean configurada, OrigemPix origem) {
     }
 }

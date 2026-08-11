@@ -68,6 +68,12 @@ export const rotas: Routes = [
     title: 'Utilizadores · JcardApp',
   },
   {
+    path: 'admin/pix',
+    canActivate: [adminGuard],
+    loadComponent: () => import('./pages/admin-pix.component').then((m) => m.AdminPixComponent),
+    title: 'Chave PIX · JcardApp',
+  },
+  {
     path: 'admin/cartoes',
     canActivate: [adminGuard],
     loadComponent: () =>

@@ -145,15 +145,29 @@ interface Grupo {
           @if (podeDeclararPagamento(a)) {
             <hr>
             <h3>Pagar</h3>
-            <div class="pix">
-              <div class="meta">Chave PIX ({{ d.pix.tipo }}) · {{ d.pix.titular }}</div>
-              <div class="linha">
-                <code class="chave">{{ d.pix.chave }}</code>
-                <button type="button" class="btn-secundario" (click)="copiarChave(d.pix.chave)">
-                  {{ copiado() ? 'Copiado!' : 'Copiar chave' }}
-                </button>
+            @if (d.pix.configurada) {
+              <div class="pix">
+                <div class="meta">Chave PIX ({{ d.pix.tipo }}) · {{ d.pix.titular }}</div>
+                <div class="linha">
+                  <code class="chave">{{ d.pix.chave }}</code>
+                  <button type="button" class="btn-secundario" (click)="copiarChave(d.pix.chave)">
+                    {{ copiado() ? 'Copiado!' : 'Copiar chave' }}
+                  </button>
+                </div>
               </div>
-            </div>
+            } @else {
+              <!-- Sem chave configurada não há o que copiar. Dizer isso é melhor
+                   do que exibir o texto do default como se fosse chave: a pessoa
+                   copiaria e pagaria para lugar nenhum. -->
+              <div class="pix pendente">
+                <div class="meta">Chave PIX</div>
+                <p>
+                  A chave PIX ainda não foi configurada no app. Fale com o
+                  administrador antes de pagar — se ele já passou a chave por
+                  fora, pague por lá e declare o pagamento aqui embaixo.
+                </p>
+              </div>
+            }
 
             <form (ngSubmit)="pagar(a)">
               <label for="valorPago">Quanto você pagou</label>

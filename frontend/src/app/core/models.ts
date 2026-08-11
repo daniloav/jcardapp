@@ -130,6 +130,17 @@ export interface Pix {
   tipo: string;
   chave: string;
   titular: string;
+  /**
+   * Se existe chave para mostrar. Sendo `false`, `chave` vem vazia e a tela
+   * avisa em vez de oferecer cópia — copiar um aviso de configuração mandaria a
+   * pessoa pagar para lugar nenhum.
+   */
+  configurada: boolean;
+  /**
+   * De onde saiu: `APP` (o admin salvou pela tela), `AMBIENTE` (ainda vem do
+   * `.env` da instalação) ou `NENHUMA`. Só a tela de admin usa.
+   */
+  origem: 'APP' | 'AMBIENTE' | 'NENHUMA';
 }
 
 export interface MinhasContas {

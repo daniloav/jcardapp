@@ -54,6 +54,9 @@ import { APP_VERSION } from '../version';
               <a routerLink="/admin/cartoes" routerLinkActive="ativo">
                 <span class="ico" aria-hidden="true">💳</span> Cartões
               </a>
+              <a routerLink="/admin/pix" routerLinkActive="ativo">
+                <span class="ico" aria-hidden="true">🔑</span> Chave PIX
+              </a>
             }
           </nav>
 
