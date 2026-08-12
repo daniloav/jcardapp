@@ -647,6 +647,10 @@ td > .pagamentos { min-width: 15rem; }
   &.alerta { background: #fdf3d7; color: var(--alerta); }
   &.erro { background: #fbe3e1; color: var(--erro); }
   &.info { background: #d9f2ef; color: #0d6e66; }
+
+  /* Roxo, e não mais um tom das cores de status: a prévia não é um estágio da
+     fatura, é outra coisa. Quem confunde as duas acha que já pagou o mês. */
+  &.previa { background: #ece2fb; color: #5b34a8; }
 }
 
 /* -------------------------------------------------------------- botões -- */
@@ -708,7 +712,9 @@ input, select, textarea {
   &:focus-visible { outline: 3px solid var(--acento); outline-offset: 1px; }
 }
 
-input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
+/* Caixa e rádio não são campo de texto: sem isto o `width: 100%` de cima faz a
+   bolinha ocupar a linha inteira e empurrar o rótulo para a outra ponta. */
+input[type="checkbox"], input[type="radio"] { width: auto; margin-right: 0.4rem; }
 
 fieldset { border: 1px solid var(--borda); border-radius: var(--raio); padding: 1rem; }
 legend { font-weight: 700; padding: 0 0.4rem; }
@@ -788,6 +794,15 @@ table {
 
   &.erro { border-left-color: var(--erro); background: #fdeceb; }
   &.info { border-left-color: var(--acento); background: #e6f7f5; }
+
+  /* A prévia tem de se anunciar em TODA tela onde aparece, e com destaque
+     maior que os outros avisos: o risco aqui não é a pessoa não entender uma
+     regra, é ela achar que está olhando a conta fechada do mês. */
+  &.previa {
+    border-left-color: #7c4dd6;
+    background: #f4eefe;
+    strong { color: #4c2b91; }
+  }
 }
 
 .centro { max-width: 380px; margin: 3rem auto; }

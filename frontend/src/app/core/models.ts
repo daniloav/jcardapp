@@ -1,7 +1,13 @@
 /** Espelho dos DTOs do backend (br.com.jcard.dto). */
 
+/**
+ * `PREVIA` está fora do ciclo das outras: é a parcial do mês que ainda não
+ * fechou. Dá para assumir conta nela, mas ninguém deve nada — ela não concilia,
+ * não fecha e não gera acerto. Quando a fatura de verdade chega, a prévia é
+ * consumida (as atribuições passam para ela) e some.
+ */
 export type StatusFatura =
-  | 'IMPORTADA' | 'DIVERGENTE' | 'EM_AVALIACAO' | 'CONCILIADA' | 'FECHADA';
+  | 'PREVIA' | 'IMPORTADA' | 'DIVERGENTE' | 'EM_AVALIACAO' | 'CONCILIADA' | 'FECHADA';
 
 export type StatusAcerto = 'ABERTO' | 'ACEITO' | 'INFORMADO' | 'CONFIRMADO';
 
@@ -43,6 +49,24 @@ export interface Fatura {
   totalLancamentos: number;
   noPool: number;
   emConflito: number;
+}
+
+/**
+ * O que uma subida de prévia produziu.
+ *
+ * Os dois números do meio são os que a tela precisa dizer em voz alta: a prévia
+ * é sobrescrita, e quem sobe o arquivo tem de saber que o trabalho das pessoas
+ * sobreviveu — e quanto dele não sobreviveu.
+ */
+export interface ResultadoPrevia {
+  fatura: Fatura;
+  lancamentos: number;
+  noPool: number;
+  /** Atribuições que a leitura nova reaproveitou. */
+  mantidos: number;
+  /** As que não casaram com nenhuma linha do arquivo novo e voltaram ao pool. */
+  devolvidos: number;
+  ignoradas: number;
 }
 
 /** Só id e nome: o que o seletor de divisão precisa. */

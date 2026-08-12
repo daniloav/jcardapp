@@ -43,84 +43,119 @@ interface Pendencia {
 
     @if (carregando()) {
       <p class="vazio">Carregando…</p>
-    } @else if (faturas().length === 0) {
-      <div class="vazio">
-        <p>Nenhuma fatura ainda.</p>
-        @if (auth.isAdmin()) {
-          <a class="btn" routerLink="/admin/importar">Importar a primeira</a>
-        }
-      </div>
     } @else {
-      <div class="tiles">
-        <div class="tile andamento">
-          <span class="rotulo">Em andamento</span>
-          <strong>{{ andamento().length }}</strong>
-          <span class="meta">
-            {{ andamento().length === 1 ? 'fatura' : 'faturas' }} ·
-            {{ totalAndamento() | currency: 'BRL' : 'symbol' : '1.0-0' }}
-          </span>
-        </div>
-        <div class="tile fechada">
-          <span class="rotulo">Fechadas</span>
-          <strong>{{ fechadas().length }}</strong>
-          <span class="meta">
-            {{ fechadas().length === 1 ? 'fatura' : 'faturas' }} ·
-            {{ totalFechadas() | currency: 'BRL' : 'symbol' : '1.0-0' }}
-          </span>
-        </div>
-      </div>
 
-      <h2>Faturas por mês</h2>
-      <ul class="barras">
-        @for (b of barras(); track b.fatura.id) {
-          <li>
-            <a class="mes" [routerLink]="destino(b.fatura)">
-              {{ b.fatura.competencia | date: 'MM/yy' }}
-            </a>
-            <span class="trilha" aria-hidden="true">
-              <span class="preenchida" [class]="b.grupo" [style.width.%]="b.largura"></span>
-            </span>
-            <span class="valor">
-              {{ b.fatura.valorTotal | currency: 'BRL' : 'symbol' : '1.0-0' }}
-            </span>
-          </li>
-        }
-      </ul>
-      <p class="legenda">
-        <span class="chave fechada" aria-hidden="true"></span> Fechada
-        <span class="chave andamento" aria-hidden="true"></span> Em andamento
-        @if (temDivergente()) {
-          <span class="chave divergente" aria-hidden="true"></span> Divergente
-        }
-      </p>
-      @if (faturas().length > barras().length) {
-        <p class="nota">
-          Mostrando os últimos {{ barras().length }} meses —
-          <a routerLink="/faturas">ver todas as faturas</a>.
-        </p>
-      }
-
-      @if (pendencias().length > 0) {
-        <h2>Precisa de você</h2>
-        @for (p of pendencias(); track p.fatura.id) {
-          <article class="cartao">
-            <div class="linha">
-              <div>
-                <strong>{{ p.fatura.competencia | date: 'MM/yyyy' }}</strong>
-                <ul class="motivos">
-                  @for (m of p.motivos; track m) {
-                    <li>{{ m }}</li>
-                  }
-                </ul>
-              </div>
-              <div>
-                <a class="btn" [routerLink]="destino(p.fatura)">{{ acao(p.fatura) }}</a>
+      <!-- A prévia vem primeiro e fora do resto: é o mês que está acontecendo,
+           e é onde o trabalho de reconhecer compra rende mais — a compra ainda
+           está fresca na memória de quem a fez. -->
+      @if (previa(); as p) {
+        <article class="cartao">
+          <div class="linha">
+            <div>
+              <strong>Prévia de {{ p.competencia | date: 'MM/yyyy' }}</strong>
+              <span class="tag previa">mês em aberto</span>
+              <div class="meta">
+                {{ p.totalLancamentos }} lançamentos ·
+                {{ p.valorTotal | currency: 'BRL' : 'symbol' : '1.0-0' }} até agora
+                @if (p.noPool > 0) {
+                  · <strong>{{ p.noPool }} sem dono</strong>
+                }
               </div>
             </div>
-          </article>
-        }
+            <div>
+              <a class="btn" [routerLink]="destino(p)">
+                {{ auth.isAdmin() ? 'Abrir a prévia' : 'Ver o que é meu' }}
+              </a>
+            </div>
+          </div>
+          <p class="meta">
+            A fatura ainda não fechou e não há nada a pagar. Marcar o que é seu
+            agora é o que deixa pouco trabalho no dia do vencimento.
+          </p>
+        </article>
+      }
+
+      @if (fechadasEEmAndamento().length === 0) {
+        <div class="vazio">
+          <p>Nenhuma fatura fechada ainda.</p>
+          @if (auth.isAdmin()) {
+            <a class="btn" routerLink="/admin/importar">
+              {{ previa() ? 'Importar a fatura do mês' : 'Subir a primeira' }}
+            </a>
+          }
+        </div>
       } @else {
-        <p class="nota">Nada esperando por você agora.</p>
+        <div class="tiles">
+          <div class="tile andamento">
+            <span class="rotulo">Em andamento</span>
+            <strong>{{ andamento().length }}</strong>
+            <span class="meta">
+              {{ andamento().length === 1 ? 'fatura' : 'faturas' }} ·
+              {{ totalAndamento() | currency: 'BRL' : 'symbol' : '1.0-0' }}
+            </span>
+          </div>
+          <div class="tile fechada">
+            <span class="rotulo">Fechadas</span>
+            <strong>{{ fechadas().length }}</strong>
+            <span class="meta">
+              {{ fechadas().length === 1 ? 'fatura' : 'faturas' }} ·
+              {{ totalFechadas() | currency: 'BRL' : 'symbol' : '1.0-0' }}
+            </span>
+          </div>
+        </div>
+
+        <h2>Faturas por mês</h2>
+        <ul class="barras">
+          @for (b of barras(); track b.fatura.id) {
+            <li>
+              <a class="mes" [routerLink]="destino(b.fatura)">
+                {{ b.fatura.competencia | date: 'MM/yy' }}
+              </a>
+              <span class="trilha" aria-hidden="true">
+                <span class="preenchida" [class]="b.grupo" [style.width.%]="b.largura"></span>
+              </span>
+              <span class="valor">
+                {{ b.fatura.valorTotal | currency: 'BRL' : 'symbol' : '1.0-0' }}
+              </span>
+            </li>
+          }
+        </ul>
+        <p class="legenda">
+          <span class="chave fechada" aria-hidden="true"></span> Fechada
+          <span class="chave andamento" aria-hidden="true"></span> Em andamento
+          @if (temDivergente()) {
+            <span class="chave divergente" aria-hidden="true"></span> Divergente
+          }
+        </p>
+        @if (fechadasEEmAndamento().length > barras().length) {
+          <p class="nota">
+            Mostrando os últimos {{ barras().length }} meses —
+            <a routerLink="/faturas">ver todas as faturas</a>.
+          </p>
+        }
+
+        @if (pendencias().length > 0) {
+          <h2>Precisa de você</h2>
+          @for (p of pendencias(); track p.fatura.id) {
+            <article class="cartao">
+              <div class="linha">
+                <div>
+                  <strong>{{ p.fatura.competencia | date: 'MM/yyyy' }}</strong>
+                  <ul class="motivos">
+                    @for (m of p.motivos; track m) {
+                      <li>{{ m }}</li>
+                    }
+                  </ul>
+                </div>
+                <div>
+                  <a class="btn" [routerLink]="destino(p.fatura)">{{ acao(p.fatura) }}</a>
+                </div>
+              </div>
+            </article>
+          }
+        } @else {
+          <p class="nota">Nada esperando por você agora.</p>
+        }
       }
     }
   `,
@@ -137,8 +172,21 @@ export class InicioComponent {
 
   primeiroNome = computed(() => this.auth.usuario()?.nome?.split(' ')[0] ?? '');
 
-  fechadas = computed(() => this.faturas().filter((f) => f.status === 'FECHADA'));
-  andamento = computed(() => this.faturas().filter((f) => f.status !== 'FECHADA'));
+  /** A parcial do mês em curso, quando existe uma. No máximo uma por mês. */
+  previa = computed(() => this.faturas().find((f) => f.status === 'PREVIA') ?? null);
+
+  /**
+   * As faturas de verdade. A prévia fica de fora dos totais, do gráfico e das
+   * pendências <b>de propósito</b>: ela é um número que ainda vai crescer, e
+   * somá-la ao "em andamento" faria a tela anunciar uma dívida que não existe.
+   * Ela tem cartão próprio, no topo, dizendo o que é.
+   */
+  fechadasEEmAndamento = computed(() => this.faturas().filter((f) => f.status !== 'PREVIA'));
+
+  fechadas = computed(() =>
+    this.fechadasEEmAndamento().filter((f) => f.status === 'FECHADA'));
+  andamento = computed(() =>
+    this.fechadasEEmAndamento().filter((f) => f.status !== 'FECHADA'));
   totalFechadas = computed(() => this.soma(this.fechadas()));
   totalAndamento = computed(() => this.soma(this.andamento()));
   temDivergente = computed(() => this.barras().some((b) => b.grupo === 'divergente'));
@@ -151,7 +199,7 @@ export class InicioComponent {
    * faltando.
    */
   barras = computed<Barra[]>(() => {
-    const meses = this.faturas().slice(0, InicioComponent.MESES_NO_GRAFICO);
+    const meses = this.fechadasEEmAndamento().slice(0, InicioComponent.MESES_NO_GRAFICO);
     const maior = Math.max(...meses.map((f) => Math.abs(f.valorTotal)), 1);
     return meses.map((f) => ({
       fatura: f,
@@ -162,7 +210,7 @@ export class InicioComponent {
 
   /** Só o que ainda depende de alguém — quem já fechou não pede nada. */
   pendencias = computed<Pendencia[]>(() =>
-    this.faturas()
+    this.fechadasEEmAndamento()
       .map((f) => ({ fatura: f, motivos: this.motivos(f) }))
       .filter((p) => p.motivos.length > 0));
 

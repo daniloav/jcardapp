@@ -59,6 +59,15 @@ public class ConciliacaoService {
         BigDecimal soma = somaLancamentos(fatura.id);
         fatura.valorLancado = soma;
 
+        // Na prévia não há total impresso: o total dela É a soma, e não existe
+        // divergência possível. Deixá-la passar pela regra abaixo faria a
+        // parcial do mês nascer DIVERGENTE toda vez que o mês crescesse.
+        if (fatura.ehPrevia()) {
+            fatura.valorTotal = soma;
+            fatura.persist();
+            return fatura;
+        }
+
         if (fatura.valorTotal.compareTo(soma) != 0) {
             fatura.status = StatusFatura.DIVERGENTE;
             LOG.warnf("Fatura %d DIVERGENTE: total impresso %s, lido %s (diferença %s).",
@@ -81,6 +90,13 @@ public class ConciliacaoService {
     @Transactional
     public List<Acerto> recalcularAcertos(Long faturaId) {
         Fatura fatura = carregar(faturaId);
+        // Prévia não gera acerto: ninguém deve por uma parcial, e um acerto
+        // gravado aqui apareceria em "meus acertos" como cobrança de um mês que
+        // ainda nem fechou. O quanto-vai-dar da prévia a pessoa vê na tela dela,
+        // calculado pelo RateioService na hora — derivado, como tem de ser.
+        if (fatura.ehPrevia()) {
+            return List.of();
+        }
         Usuario titular = titular();
 
         Map<Long, BigDecimal> porUsuario = rateio.totaisPorUsuario(fatura, titular);
@@ -133,6 +149,7 @@ public class ConciliacaoService {
     @Transactional
     public Fatura conciliar(Long faturaId, Usuario porQuem) {
         Fatura fatura = carregar(faturaId);
+        exigirFaturaDeVerdade(fatura, "conciliar");
         if (fatura.status == StatusFatura.DIVERGENTE) {
             throw new WebApplicationException(
                     "A fatura está divergente (diferença de R$ " + fatura.divergencia()
@@ -205,6 +222,7 @@ public class ConciliacaoService {
     @Transactional
     public Fatura reabrirAvaliacao(Long faturaId, Usuario admin, String motivo) {
         Fatura fatura = carregar(faturaId);
+        exigirFaturaDeVerdade(fatura, "reabrir");
         if (fatura.status == StatusFatura.FECHADA) {
             throw new WebApplicationException(
                     "Fatura fechada é o histórico do acerto e não volta para avaliação.", 409);
@@ -259,6 +277,7 @@ public class ConciliacaoService {
     @Transactional
     public Fatura fechar(Long faturaId, Usuario porQuem) {
         Fatura fatura = carregar(faturaId);
+        exigirFaturaDeVerdade(fatura, "fechar");
         if (fatura.status != StatusFatura.CONCILIADA) {
             throw new WebApplicationException("Concilie a fatura antes de fechar.", 409);
         }
@@ -283,6 +302,23 @@ public class ConciliacaoService {
      * entidade evita que um objeto destacado (vindo de outra transação) chegue
      * até um {@code persist()} — que falha em runtime.
      */
+    /**
+     * O fechamento é da fatura de verdade.
+     *
+     * <p>A prévia não tem total impresso para conferir nem valor definitivo para
+     * congelar — conciliar uma parcial jogaria no titular tudo que ainda não foi
+     * assumido <i>no meio do mês</i> e cobraria dele uma fatura que ainda vai
+     * crescer. A parcial existe para as pessoas irem assumindo, não para fechar.
+     */
+    private void exigirFaturaDeVerdade(Fatura fatura, String acao) {
+        if (fatura.ehPrevia()) {
+            throw new WebApplicationException(
+                    "Isto é a prévia de " + fatura.competencia + ", não a fatura — não dá para "
+                    + acao + ". Importe a fatura fechada do mês: ela nasce já com tudo que "
+                    + "as pessoas assumiram aqui.", 409);
+        }
+    }
+
     private Fatura carregar(Long faturaId) {
         Fatura f = Fatura.findById(faturaId);
         if (f == null) {

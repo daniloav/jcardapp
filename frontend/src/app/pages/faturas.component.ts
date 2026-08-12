@@ -30,12 +30,13 @@ import { Fatura } from '../core/models';
               <strong>{{ f.competencia | date: 'MM/yyyy' }}</strong>
               <span class="tag" [class]="classeStatus(f)">{{ rotulo(f.status) }}</span>
               <div class="meta">
-                Total {{ f.valorTotal | currency: 'BRL' }} ·
+                {{ f.status === 'PREVIA' ? 'Até agora' : 'Total' }}
+                {{ f.valorTotal | currency: 'BRL' }} ·
                 {{ f.totalLancamentos }} lançamentos
               </div>
             </div>
             <div>
-              @if (f.noPool > 0 && f.status === 'EM_AVALIACAO') {
+              @if (f.noPool > 0 && (f.status === 'EM_AVALIACAO' || f.status === 'PREVIA')) {
                 <span class="tag alerta">{{ f.noPool }} sem dono</span>
               }
               @if (f.emConflito > 0) {
@@ -43,6 +44,14 @@ import { Fatura } from '../core/models';
               }
             </div>
           </div>
+
+          @if (f.status === 'PREVIA') {
+            <div class="aviso previa">
+              <strong>Ainda é só a prévia deste mês.</strong> A fatura não fechou:
+              faltam compras, os valores mudam e não há nada a pagar. Assumir o que
+              é seu agora é o que deixa pouco trabalho para o dia do vencimento.
+            </div>
+          }
 
           @if (f.status === 'DIVERGENTE') {
             <div class="aviso erro">
@@ -92,10 +101,16 @@ export class FaturasComponent {
   excluir(f: Fatura): void {
     const mes = new Date(f.competencia).toLocaleDateString('pt-BR',
       { month: '2-digit', year: 'numeric' });
-    const ok = confirm(
-      `Excluir a fatura de ${mes}?\n\n`
-      + `Somem os ${f.totalLancamentos} lançamentos, tudo que as pessoas já assumiram `
-      + 'e os acertos calculados. Não dá para desfazer.');
+    // A prévia some sozinha quando a fatura do mês chega; apagá-la à mão é
+    // recomeçar o mês do zero, e é isso que a confirmação precisa dizer.
+    const ok = confirm(f.status === 'PREVIA'
+      ? `Apagar a prévia de ${mes}?\n\n`
+        + `Somem os ${f.totalLancamentos} lançamentos e tudo que as pessoas já assumiram `
+        + 'nela. Subir o CSV de novo recria a prévia, mas com todo mundo começando '
+        + 'de novo. Não dá para desfazer.'
+      : `Excluir a fatura de ${mes}?\n\n`
+        + `Somem os ${f.totalLancamentos} lançamentos, tudo que as pessoas já assumiram `
+        + 'e os acertos calculados. Não dá para desfazer.');
     if (!ok) {
       return;
     }
@@ -119,6 +134,7 @@ export class FaturasComponent {
 
   rotulo(s: Fatura['status']): string {
     return {
+      PREVIA: 'prévia · mês em aberto',
       IMPORTADA: 'importada',
       DIVERGENTE: 'divergente',
       EM_AVALIACAO: 'em avaliação',
@@ -130,6 +146,7 @@ export class FaturasComponent {
   classeStatus(f: Fatura): string {
     if (f.status === 'DIVERGENTE') return 'erro';
     if (f.status === 'FECHADA') return 'ok';
+    if (f.status === 'PREVIA') return 'previa';
     if (f.status === 'EM_AVALIACAO') return 'info';
     return '';
   }

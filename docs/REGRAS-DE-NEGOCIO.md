@@ -260,12 +260,14 @@ pertencia à atribuição que está sendo discutida.
 
 `ReivindicacaoService.desistir` · teste `recusarParteDesfazADivisao`
 
-### 3.8 Só dá para mexer com a fatura em avaliação
+### 3.8 Só dá para mexer com a fatura em avaliação (ou na prévia)
 
-Fora de `EM_AVALIACAO`, reivindicar, desistir e dividir respondem 409. Quando o
-engano só aparece depois disso, a saída é o admin **reabrir a avaliação** (§4.2).
+Reivindicar, desistir e dividir valem em `EM_AVALIACAO` e em `PREVIA` — assumir
+cedo é o ponto da prévia (§4.3). Em qualquer outro estado, 409. Quando o engano
+só aparece depois disso, a saída é o admin **reabrir a avaliação** (§4.2).
 
-`ReivindicacaoService.buscarReivindicavel` · `DivisaoService.carregarDivisivel`
+`Fatura.aceitaAtribuicao` · `ReivindicacaoService.buscarReivindicavel` ·
+`DivisaoService.carregarDivisivel`
 
 ### 3.9 O estabelecimento pode ganhar apelido
 
@@ -294,6 +296,9 @@ o histórico de outra pessoa.
 ## 4. Ciclo da fatura
 
 ```
+PREVIA (mês em aberto; fora do ciclo — §4.3)
+   └── consumida na importação da fatura do mês
+                     │
 IMPORTADA ──┬─► DIVERGENTE (soma não fecha; trava aqui)
             └─► EM_AVALIACAO ──► CONCILIADA ──► FECHADA
                       ▲               │
@@ -352,6 +357,46 @@ quitado. Fatura `FECHADA` também não volta: ela é o histórico do acerto.
 testes `reabrirDevolveAsSobrasAoPool`, `reabrirPreservaAArbitragem`,
 `reabrirAnulaOAceite`, `reabrirPreservaOPagamentoInformado`,
 `reabrirComAcertoConfirmadoERecusado`, `reabrirCorrigirEConciliarDeNovo`
+
+### 4.3 A prévia: o mês em aberto, feito aos poucos
+
+A fatura chega inteira e de uma vez, e são 514 linhas. Cada pessoa tem de
+reconhecer um mês de compras de memória no mesmo fim de semana, e o que ninguém
+reconhece a tempo cai no titular. A prévia é o CSV da **fatura em aberto** —
+que o banco deixa baixar a qualquer momento —, subido quantas vezes o admin
+quiser ao longo do mês.
+
+**Uma prévia por competência**, garantida por índice único parcial. Subir de novo
+**substitui** a anterior. E substituir não pode custar o trabalho de ninguém:
+
+- as atribuições feitas por gente (`MANUAL` e `ADMIN`) são recapturadas antes de
+  apagar e reaplicadas na leitura nova, junto com as **contas rachadas**;
+- as origens automáticas (`HERDADA_PARCELA`, `REGRA_CARTAO`) não viajam: são
+  recalculadas da própria fonte a cada subida, e uma cópia velha faria uma regra
+  desligada no meio do mês continuar valendo por herança;
+- o casamento é por **data + estabelecimento + valor + parcela**. Compra que
+  aparece com outro valor no arquivo novo não é a mesma compra e **volta ao
+  pool** — vale a mesma regra do §2.3: na dúvida, deixa no pool. A resposta da
+  subida diz quantas voltaram;
+- a chave guarda uma **fila**, não um valor: três corridas de R$ 7,35 no mesmo
+  dia podem ser de três pessoas, e casar uma a uma mantém a contagem certa.
+
+**Quando a fatura de verdade daquele mês é importada, ela consome a prévia** pelo
+mesmo caminho: os lançamentos nascem já no nome de quem os assumiu e a prévia
+deixa de existir. É para isso que ela serve.
+
+O que a prévia **não** faz, e por quê:
+
+| Não faz | Por quê |
+|---|---|
+| acerto | ninguém deve nada por uma parcial; o "quanto vai dar" é derivado do `RateioService` na hora |
+| conciliar / fechar | não há total impresso para conferir, e jogar no titular o que ninguém assumiu *no meio do mês* o cobraria por uma fatura que ainda vai crescer |
+| `DIVERGENTE` | o total dela **é** a soma lida; não há o que divergir |
+| criar `CompromissoParcelado` | ela é reescrita a cada subida — o compromisso ficaria órfão, e registrar a parcela poderia encerrá-lo antes de a fatura de verdade herdar (§2.2) |
+| e-mail | pode subir todo dia; um aviso por subida treinaria a família a ignorar o e-mail da fatura de verdade |
+| PDF | o leitor de PDF não fecha a fatura, e sem total impresso nada denunciaria a falta |
+
+`PreviaService` · `Fatura.aceitaAtribuicao` · testes `PreviaDeFaturaTest`
 
 ## 5. Quitação
 

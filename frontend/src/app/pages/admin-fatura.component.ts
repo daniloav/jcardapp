@@ -1,7 +1,7 @@
 import { CurrencyPipe, DatePipe, LowerCasePipe } from '@angular/common';
 import { Component, Input, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ToastService } from '../core/toast.service';
@@ -13,28 +13,50 @@ import {
 /** Conciliação: conflitos para arbitrar, fechamento e confirmação de pagamentos. */
 @Component({
   standalone: true,
-  imports: [FormsModule, CurrencyPipe, DatePipe, LowerCasePipe],
+  imports: [FormsModule, RouterLink, CurrencyPipe, DatePipe, LowerCasePipe],
   template: `
     @if (detalhe(); as d) {
-      <h1>Conciliação · {{ d.fatura.competencia | date: 'MM/yyyy' }}</h1>
+      <h1>
+        {{ previa() ? 'Prévia' : 'Conciliação' }} ·
+        {{ d.fatura.competencia | date: 'MM/yyyy' }}
+      </h1>
+
+      @if (previa()) {
+        <div class="aviso previa">
+          <strong>Esta é a prévia do mês, não a fatura.</strong>
+          Ela existe para as pessoas irem assumindo o que é delas enquanto o mês
+          corre. Não gera acerto, não concilia e não fecha — e some quando você
+          importar a fatura de verdade, passando para ela tudo que já foi assumido
+          aqui. Subir o CSV de novo substitui esta prévia sem perder esse trabalho.
+        </div>
+      }
 
       <article class="cartao">
         <div class="linha">
           <div>
-            <div>Total da fatura</div>
+            <div>{{ previa() ? 'Somado até agora' : 'Total da fatura' }}</div>
             <strong style="font-size:1.3rem">{{ d.fatura.valorTotal | currency: 'BRL' }}</strong>
           </div>
-          <div>
-            <div>Soma lida do PDF</div>
-            <strong>{{ d.fatura.valorLancado | currency: 'BRL' }}</strong>
-          </div>
-          <div>
-            <div>Diferença</div>
-            <strong [style.color]="d.fatura.divergencia === 0 ? 'var(--ok)' : 'var(--erro)'">
-              {{ d.fatura.divergencia | currency: 'BRL' }}
-            </strong>
-          </div>
-          <span class="tag">{{ d.fatura.status }}</span>
+          @if (!previa()) {
+            <div>
+              <div>Soma lida do PDF</div>
+              <strong>{{ d.fatura.valorLancado | currency: 'BRL' }}</strong>
+            </div>
+            <div>
+              <div>Diferença</div>
+              <strong [style.color]="d.fatura.divergencia === 0 ? 'var(--ok)' : 'var(--erro)'">
+                {{ d.fatura.divergencia | currency: 'BRL' }}
+              </strong>
+            </div>
+          } @else {
+            <div>
+              <div>Sem dono</div>
+              <strong>{{ d.fatura.noPool }} de {{ d.fatura.totalLancamentos }}</strong>
+            </div>
+          }
+          <span class="tag" [class.previa]="previa()">
+            {{ previa() ? 'PRÉVIA' : d.fatura.status }}
+          </span>
         </div>
       </article>
 
@@ -82,6 +104,7 @@ import {
         </div>
       }
 
+      @if (!previa()) {
       <h2>Acertos por pessoa</h2>
       @if (d.acertos.length === 0) {
         <p class="vazio">Ainda sem acertos calculados.</p>
@@ -170,12 +193,15 @@ import {
           </table>
         </div>
       }
+      }
 
       <!-- --------------------------------------------- conferir uma conta -- -->
       <!-- O total de uma pessoa não diz de onde ele veio: "R$ 53,33" não conta
            se o IOF entrou ou não. Aqui a conta abre linha a linha, e vale para
-           quem NÃO tem acerto também — é justamente aí que mora a dúvida. -->
-      <h2>Conferir a conta de uma pessoa</h2>
+           quem NÃO tem acerto também — é justamente aí que mora a dúvida.
+           Na prévia ela responde a mesma pergunta com o rateio de agora: quanto
+           está no nome de cada um se o mês fechasse hoje. -->
+      <h2>{{ previa() ? 'Como está a conta de cada um' : 'Conferir a conta de uma pessoa' }}</h2>
       <div class="cartao">
         <div class="atribuir">
           <select [ngModel]="pessoaDetalhe()" (ngModelChange)="pessoaDetalhe.set($event)"
@@ -329,29 +355,48 @@ import {
         }
       </div>
 
-      <h2>Fechamento</h2>
-      <div class="cartao">
-        <p class="meta">
-          Conciliar atribui ao titular tudo que ficou sem dono e congela o rateio.
-          Fechar exige que todos os pagamentos estejam confirmados.
-        </p>
-        <div class="linha">
-          <button type="button"
-                  [disabled]="d.fatura.status !== 'EM_AVALIACAO' || conflitos().length > 0"
-                  (click)="conciliar()">
-            Conciliar ({{ d.fatura.noPool }} sem dono → titular)
-          </button>
-          <button type="button" class="btn-secundario"
-                  [disabled]="d.fatura.status !== 'CONCILIADA'" (click)="fechar()">
-            Fechar fatura
-          </button>
-        </div>
-        @if (conflitos().length > 0) {
-          <p class="meta" style="color:var(--erro)">
-            Resolva os conflitos antes de conciliar.
+      @if (previa()) {
+        <h2>Quando o mês fechar</h2>
+        <div class="cartao">
+          <p class="meta">
+            A prévia não concilia nem fecha: não existe total impresso para
+            conferir contra a soma, e o valor ainda vai crescer. Conciliar uma
+            parcial jogaria no titular tudo que ninguém assumiu <em>no meio do
+            mês</em> e o cobraria por uma fatura que ainda nem chegou.
           </p>
-        }
-      </div>
+          <p class="meta">
+            No fim do mês, importe a <strong>fatura fechada</strong> desta mesma
+            competência: ela nasce com {{ atribuidos(d) }} lançamento(s) já no nome
+            de quem os assumiu aqui, os parcelamentos passam a valer para os
+            próximos meses e esta prévia deixa de existir.
+          </p>
+          <a class="btn" routerLink="/admin/importar">Ir para a importação</a>
+        </div>
+      } @else {
+        <h2>Fechamento</h2>
+        <div class="cartao">
+          <p class="meta">
+            Conciliar atribui ao titular tudo que ficou sem dono e congela o rateio.
+            Fechar exige que todos os pagamentos estejam confirmados.
+          </p>
+          <div class="linha">
+            <button type="button"
+                    [disabled]="d.fatura.status !== 'EM_AVALIACAO' || conflitos().length > 0"
+                    (click)="conciliar()">
+              Conciliar ({{ d.fatura.noPool }} sem dono → titular)
+            </button>
+            <button type="button" class="btn-secundario"
+                    [disabled]="d.fatura.status !== 'CONCILIADA'" (click)="fechar()">
+              Fechar fatura
+            </button>
+          </div>
+          @if (conflitos().length > 0) {
+            <p class="meta" style="color:var(--erro)">
+              Resolva os conflitos antes de conciliar.
+            </p>
+          }
+        </div>
+      }
 
       <!-- ------------------------------------------- voltar para avaliação -- -->
       @if (d.fatura.status === 'CONCILIADA') {
@@ -378,13 +423,23 @@ import {
       @if (d.fatura.status !== 'FECHADA') {
         <h2>Excluir</h2>
         <div class="cartao">
-          <p class="meta">
-            Para o arquivo errado ou a competência trocada: como o app rejeita
-            reimportar a mesma fatura (o hash é único), a saída é apagar e subir
-            de novo. Somem os lançamentos, o que as pessoas assumiram e os acertos.
-          </p>
+          @if (previa()) {
+            <p class="meta">
+              Só para recomeçar o mês do zero — <strong>subir o CSV de novo já
+              substitui esta prévia</strong> e mantém o que as pessoas assumiram,
+              que é o caminho normal. Apagar aqui joga fora esse trabalho junto.
+            </p>
+          } @else {
+            <p class="meta">
+              Para o arquivo errado ou a competência trocada: como o app rejeita
+              reimportar a mesma fatura (o hash é único), a saída é apagar e subir
+              de novo. Somem os lançamentos, o que as pessoas assumiram e os acertos.
+            </p>
+          }
           <button type="button" class="btn-perigo" [disabled]="excluindo()"
-                  (click)="excluir(d.fatura)">Excluir esta fatura</button>
+                  (click)="excluir(d.fatura)">
+            {{ previa() ? 'Apagar esta prévia' : 'Excluir esta fatura' }}
+          </button>
         </div>
       }
 
@@ -563,6 +618,20 @@ export class AdminFaturaComponent {
     this.carregar();
   }
 
+  /**
+   * A parcial do mês em curso. Ela usa esta mesma tela — os lançamentos, a
+   * busca, a atribuição em massa e o apelido são iguais — mas nada do
+   * fechamento vale nela: não há acerto, conciliação nem total a conferir.
+   */
+  previa(): boolean {
+    return this.detalhe()?.fatura.status === 'PREVIA';
+  }
+
+  /** Quantos lançamentos já têm dono — o que a fatura de verdade vai herdar. */
+  atribuidos(d: DetalheFatura): number {
+    return d.lancamentos.filter((l) => l.responsavelId !== null).length;
+  }
+
   /** A busca é sobre a lista inteira: 514 linhas não se percorrem com o olho. */
   lancamentosFiltrados = computed<Lancamento[]>(() => {
     const termo = this.filtro().trim().toLowerCase();
@@ -704,16 +773,23 @@ export class AdminFaturaComponent {
   }
 
   excluir(f: DetalheFatura['fatura']): void {
-    const ok = confirm(
-      'Excluir esta fatura?\n\n'
-      + `Somem os ${f.totalLancamentos} lançamentos, tudo que as pessoas já assumiram `
-      + 'e os acertos calculados. Não dá para desfazer.');
+    const ok = confirm(f.status === 'PREVIA'
+      ? 'Apagar esta prévia?\n\n'
+        + `Somem os ${f.totalLancamentos} lançamentos e tudo que as pessoas já assumiram `
+        + 'nela. Para trocar o arquivo basta subir o CSV de novo — aí o que foi '
+        + 'assumido é mantido. Não dá para desfazer.'
+      : 'Excluir esta fatura?\n\n'
+        + `Somem os ${f.totalLancamentos} lançamentos, tudo que as pessoas já assumiram `
+        + 'e os acertos calculados. Não dá para desfazer.');
     if (!ok) {
       return;
     }
     this.excluindo.set(true);
     this.api.excluirFatura(f.id).subscribe({
-      next: () => { this.toast.ok('Fatura excluída.'); this.router.navigate(['/faturas']); },
+      next: () => {
+        this.toast.ok(f.status === 'PREVIA' ? 'Prévia apagada.' : 'Fatura excluída.');
+        this.router.navigate(['/faturas']);
+      },
       error: () => this.excluindo.set(false),
     });
   }
