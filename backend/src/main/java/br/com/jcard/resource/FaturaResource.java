@@ -15,6 +15,7 @@ import br.com.jcard.service.AcertoService;
 import br.com.jcard.service.ConciliacaoService;
 import br.com.jcard.service.FaturaImportService;
 import br.com.jcard.service.PixConfig;
+import br.com.jcard.service.PreviaService;
 import br.com.jcard.service.RateioService;
 import br.com.jcard.service.ReivindicacaoService;
 import jakarta.annotation.security.RolesAllowed;
@@ -54,6 +55,9 @@ public class FaturaResource {
 
     @Inject
     FaturaImportService importacao;
+
+    @Inject
+    PreviaService previas;
 
     @Inject
     ConciliacaoService conciliacao;
@@ -106,6 +110,43 @@ public class FaturaResource {
         Fatura f = importacao.importar(conteudo, arquivo.fileName(), mes, total,
                 logado.exigirSenhaTrocada());
         return resumo(f);
+    }
+
+    /**
+     * Sobe a prévia do mês — a fatura em aberto, baixada do banco em CSV.
+     *
+     * <p>Endpoint separado da importação, e não um parâmetro dela, porque as duas
+     * pedem coisas diferentes: a fatura de verdade exige o total impresso e
+     * recusa arquivo repetido; a prévia não tem total, é para ser subida de novo
+     * toda semana e cada subida <b>substitui</b> a anterior. Espremer as duas no
+     * mesmo endpoint faria a validação depender de uma flag — e a flag errada
+     * apagaria uma fatura.
+     *
+     * <p>Não pede valor total: numa parcial não existe total impresso para
+     * conferir. A invariante "as contas batem" continua sendo cobrada onde
+     * importa, na fatura fechada.
+     */
+    @POST
+    @Path("/previa")
+    @RolesAllowed(TokenService.ADMIN)
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Transactional
+    public Responses.PreviaResponse subirPrevia(@RestForm("arquivo") FileUpload arquivo,
+                                                @RestForm String competencia) {
+        if (arquivo == null) {
+            throw new WebApplicationException("Envie o CSV da fatura em aberto.", 400);
+        }
+        byte[] conteudo;
+        try {
+            conteudo = Files.readAllBytes(arquivo.uploadedFile());
+        } catch (IOException e) {
+            throw new WebApplicationException("Falha ao ler o arquivo enviado.", 400);
+        }
+
+        PreviaService.Resultado r = previas.subir(conteudo, arquivo.fileName(),
+                mesDe(competencia), logado.exigirSenhaTrocada());
+        return new Responses.PreviaResponse(resumo(r.fatura()), r.lancamentos(), r.noPool(),
+                r.mantidos(), r.devolvidos(), r.ignoradas());
     }
 
     @POST

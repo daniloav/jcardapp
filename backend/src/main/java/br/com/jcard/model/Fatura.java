@@ -68,6 +68,21 @@ public class Fatura extends EntidadeBase {
     }
 
     /**
+     * A prévia daquele mês, se houver — no máximo uma, garantida por índice
+     * único parcial (V6). Subir outra sobrescreve esta.
+     */
+    public static Fatura previaDa(LocalDate competencia) {
+        return find("competencia = ?1 and status = ?2",
+                competencia.withDayOfMonth(1), StatusFatura.PREVIA).firstResult();
+    }
+
+    /** A fatura de verdade daquele mês, se já foi importada. */
+    public static Fatura definitivaDa(LocalDate competencia) {
+        return find("competencia = ?1 and status <> ?2",
+                competencia.withDayOfMonth(1), StatusFatura.PREVIA).firstResult();
+    }
+
+    /**
      * Faturas mais recentes primeiro — ordem natural das telas.
      *
      * <p>Devolve {@link ResumoFatura}, e não a entidade, para deixar o
@@ -92,5 +107,22 @@ public class Fatura extends EntidadeBase {
     /** Utilizadores só podem mexer enquanto a fatura está em avaliação. */
     public boolean aberta() {
         return status == StatusFatura.EM_AVALIACAO;
+    }
+
+    /** Parcial do mês em curso: dá para assumir conta, mas ninguém deve nada. */
+    public boolean ehPrevia() {
+        return status == StatusFatura.PREVIA;
+    }
+
+    /**
+     * Onde o utilizador pode dizer "foi minha".
+     *
+     * <p>Vale na fatura em avaliação e também na prévia — assumir cedo é o
+     * ponto todo dela. O que a prévia <b>não</b> abre é o resto: aceite,
+     * pagamento e conciliação continuam presos à fatura de verdade, porque só
+     * ali o valor para de mudar.
+     */
+    public boolean aceitaAtribuicao() {
+        return aberta() || ehPrevia();
     }
 }

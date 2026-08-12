@@ -53,6 +53,9 @@ public class FaturaImportService {
     @Inject
     AuditoriaService auditoria;
 
+    @Inject
+    PreviaService previas;
+
     /**
      * @param competencia mês de referência; o parser usa para completar o ano das
      *                    datas {@code dd/MM} e para identificar compras do mês anterior
@@ -64,6 +67,16 @@ public class FaturaImportService {
                            BigDecimal totalManual, Usuario quem) {
 
         String hash = extrator.hash(pdf);
+
+        // A prévia do mês é consumida aqui: o que a família passou o mês
+        // assumindo já entra na fatura de verdade com dono. É o objetivo do
+        // recurso — chegar no fechamento com o trabalho quase pronto.
+        //
+        // Antes da checagem de hash de propósito: o arquivo final costuma ser o
+        // mesmo CSV da última prévia com mais alguns dias, e às vezes é idêntico
+        // a ela. Apagar a prévia primeiro libera o hash, e o 409 continua valendo
+        // para o que ele existe — reimportar uma fatura de verdade duas vezes.
+        PreviaService.Heranca heranca = previas.consumir(competencia.withDayOfMonth(1));
 
         Fatura existente = Fatura.porHash(hash);
         if (existente != null) {
@@ -126,6 +139,11 @@ public class FaturaImportService {
             } else if (origem == OrigemAtribuicao.REGRA_CARTAO) {
                 porCartao++;
             }
+            // Por cima das regras automáticas: a prévia guarda decisões de
+            // gente, e elas valem mais que o palpite do dono padrão do cartão.
+            // É aqui também que o parcelamento assumido na prévia vira
+            // compromisso — a prévia não cria nenhum, porque some a cada subida.
+            previas.aplicar(heranca, l, true);
             l.persist();
         }
 
@@ -135,8 +153,10 @@ public class FaturaImportService {
         conciliacao.recalcularAcertos(fatura.id);
 
         int pool = Lancamento.poolDaFatura(fatura.id).size();
-        String resumo = "%d lançamentos · %d herdados de parcela · %d por cartão · %d no pool%s"
-                .formatted(lida.lancamentos().size(), herdados, porCartao, pool,
+        String resumo = ("%d lançamentos · %d herdados de parcela · %d por cartão · "
+                + "%d vindos da prévia · %d no pool%s")
+                .formatted(lida.lancamentos().size(), herdados, porCartao,
+                        heranca.aproveitadas(), pool,
                         lida.linhasIgnoradas().isEmpty()
                                 ? ""
                                 : " · " + lida.linhasIgnoradas().size() + " linha(s) ignorada(s)");
@@ -163,6 +183,11 @@ public class FaturaImportService {
         }
         if (fatura.status == br.com.jcard.model.StatusFatura.FECHADA) {
             throw new WebApplicationException("Fatura fechada não é reprocessada.", 409);
+        }
+        if (fatura.ehPrevia()) {
+            throw new WebApplicationException(
+                    "Prévia não se reprocessa: suba o CSV de novo. A subida já reaproveita "
+                    + "o que as pessoas assumiram.", 409);
         }
 
         FaturaParser parser = "ITAU_CSV".equals(fatura.emissor) ? parserCsv : parserPdf;
@@ -230,7 +255,8 @@ public class FaturaImportService {
         auditoria.registrar(quem, AcaoAuditoria.EXCLUIR_FATURA, "Fatura", faturaId, resumo);
     }
 
-    private Lancamento novoLancamento(Fatura fatura, LancamentoLido lido) {
+    /** Do que o parser leu para a linha que vai ao banco. Compartilhado com a prévia. */
+    static Lancamento novoLancamento(Fatura fatura, LancamentoLido lido) {
         Lancamento l = new Lancamento();
         l.fatura = fatura;
         l.dataCompra = lido.dataCompra();

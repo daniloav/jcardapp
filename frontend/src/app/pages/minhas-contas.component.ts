@@ -51,17 +51,36 @@ interface Grupo {
   imports: [FormsModule, RouterLink, CurrencyPipe, DatePipe, LowerCasePipe],
   template: `
     @if (dados(); as d) {
-      <h1>Fatura de {{ d.fatura.competencia | date: 'MM/yyyy' }}</h1>
+      <h1>
+        {{ previa() ? 'Prévia de' : 'Fatura de' }}
+        {{ d.fatura.competencia | date: 'MM/yyyy' }}
+        @if (previa()) {
+          <span class="tag previa">prévia</span>
+        }
+      </h1>
       <p class="sub">
         Marque o que foi você. O que ninguém assumir fica com o titular do cartão.
       </p>
+
+      <!-- O aviso vem antes de tudo, e é o mais forte da tela: alguém que
+           confunda a prévia com a fatura acha que já acertou o mês. -->
+      @if (previa()) {
+        <div class="aviso previa">
+          <strong>Isto é a prévia do mês — a fatura ainda não fechou.</strong>
+          Faltam as compras dos próximos dias, os valores ainda mudam e
+          <strong>não há nada a pagar aqui</strong>. Marcar o que é seu agora é o
+          ponto: quando a fatura de verdade chegar, tudo que você assumiu já vem
+          no seu nome e sobra pouco para reconhecer de memória.
+        </div>
+      }
 
       @if (d.fatura.status === 'EM_AVALIACAO') {
         <div class="aviso">
           Ainda em avaliação: o seu total pode mudar enquanto houver lançamento sem
           dono, porque os encargos são divididos entre quem usou o cartão.
         </div>
-      } @else if (d.fatura.status !== 'CONCILIADA' && d.fatura.status !== 'FECHADA') {
+      } @else if (!previa() && d.fatura.status !== 'CONCILIADA'
+                  && d.fatura.status !== 'FECHADA') {
         <div class="aviso">
           Esta fatura não está em avaliação — não dá para alterar as contas.
         </div>
@@ -70,13 +89,21 @@ interface Grupo {
       <!-- ---------------------------------------------------- o seu total -- -->
       <article class="cartao">
         <div class="linha">
-          <strong>Seu total nesta fatura</strong>
+          <strong>{{ previa() ? 'Seu total até agora' : 'Seu total nesta fatura' }}</strong>
           <span class="valor" style="font-size:1.3rem">{{ d.total | currency: 'BRL' }}</span>
         </div>
         <div class="meta">
           {{ d.totalCompras | currency: 'BRL' }} em compras
           + {{ d.totalEncargos | currency: 'BRL' }} de encargos rateados
         </div>
+        @if (previa()) {
+          <p class="meta">
+            Uma estimativa do que está no seu nome hoje, não uma cobrança. Ela vai
+            subir com as compras que ainda faltam e pode mudar quando outras
+            pessoas assumirem as delas — os encargos são divididos entre quem usou
+            o cartão. O que vale para pagar é o total da fatura fechada.
+          </p>
+        }
 
         @if (d.acerto; as a) {
           <div class="linha" style="margin-top:0.75rem">
@@ -616,8 +643,18 @@ export class MinhasContasComponent {
     this.soConhecidos.set(false);
   }
 
+  /** A parcial do mês em curso: dá para assumir conta, mas não há o que pagar. */
+  previa(): boolean {
+    return this.dados()?.fatura.status === 'PREVIA';
+  }
+
+  /**
+   * Onde "foi minha" funciona: na fatura em avaliação e também na prévia —
+   * assumir cedo é o ponto dela.
+   */
   aberta(): boolean {
-    return this.dados()?.fatura.status === 'EM_AVALIACAO';
+    const s = this.dados()?.fatura.status;
+    return s === 'EM_AVALIACAO' || s === 'PREVIA';
   }
 
   /** O aceite e o pagamento só existem com o rateio congelado pela conciliação. */

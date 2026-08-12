@@ -90,14 +90,19 @@ sequenceDiagram
     participant C as ConciliacaoService
     participant N as NotificacaoService
 
+    participant V as PreviaService
+
     A->>R: POST /api/faturas (PDF)
     R->>I: importar(bytes, competência)
+    I->>V: consumir(competência)
+    V-->>I: atribuições da prévia (e a prévia é apagada)
     I->>I: SHA-256 → já importada? 409
     I->>P: ler(texto extraído)
     P-->>I: lançamentos + total + ignoradas
     loop cada lançamento
         I->>T: aplicar regras automáticas
         T-->>I: HERDADA_PARCELA / REGRA_CARTAO / pool
+        I->>V: aplicar herança da prévia (vence as automáticas)
     end
     I->>C: validarLeitura
     alt soma ≠ total impresso
@@ -110,6 +115,13 @@ sequenceDiagram
 
 O e-mail sai **depois** da validação: não faz sentido pedir avaliação de uma
 fatura que o parser leu errado.
+
+A prévia do mês é consumida **antes** da checagem de hash, e de propósito: o
+arquivo final costuma ser o CSV da última prévia com mais alguns dias, e às vezes
+é idêntico a ela. Apagar a prévia primeiro libera o hash, e o 409 continua
+valendo para o que existe — reimportar uma fatura de verdade duas vezes.
+`POST /api/faturas/previa` percorre o mesmo caminho sem total, sem validação de
+soma e sem e-mail (ver REGRAS-DE-NEGOCIO §4.3).
 
 ## E-mail assíncrono
 

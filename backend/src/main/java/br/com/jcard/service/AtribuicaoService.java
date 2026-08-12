@@ -48,8 +48,15 @@ public class AtribuicaoService {
             if (c != null) {
                 if (valorCompativel(l.valor, c.valorParcela)) {
                     l.atribuirA(c.usuario, OrigemAtribuicao.HERDADA_PARCELA);
-                    c.registrarParcela(l.parcelaAtual);
-                    c.persist();
+                    // A prévia lê o compromisso mas não escreve nele. Ela sobe
+                    // várias vezes no mês e é sempre provisória: registrar a
+                    // parcela aqui encerraria o compromisso quando a última
+                    // aparecesse numa prévia, e a fatura de verdade — que vem
+                    // depois — não teria mais de onde herdar as parcelas.
+                    if (!l.fatura.ehPrevia()) {
+                        c.registrarParcela(l.parcelaAtual);
+                        c.persist();
+                    }
                     return OrigemAtribuicao.HERDADA_PARCELA;
                 }
                 LOG.infof("Parcela %d/%d de '%s' com valor %s destoa do compromisso (%s) "
@@ -75,9 +82,16 @@ public class AtribuicaoService {
      * sozinhas no nome de quem assumiu esta.
      *
      * <p>Chamado quando uma reivindicação de lançamento parcelado é aceita.
+     *
+     * <p><b>Prévia não cria compromisso.</b> Ele é o que faz uma parcela
+     * assumida aqui virar dona das parcelas dos <i>outros meses</i>, e uma
+     * parcial não decide nada em outro mês — ela é reescrita a cada subida, e o
+     * compromisso ficaria apontando para um lançamento que já foi apagado. O
+     * compromisso nasce quando a fatura de verdade herda essa atribuição, a
+     * partir de um lançamento que fica.
      */
     public void registrarCompromisso(Lancamento l, Usuario dono) {
-        if (!l.parcelado()) {
+        if (!l.parcelado() || l.fatura.ehPrevia()) {
             return;
         }
         if (l.chaveParcelamento == null) {

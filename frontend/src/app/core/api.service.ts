@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   Acerto, Cartao, DetalheDoUtilizador, DetalheFatura, Fatura, Lancamento, MinhasContas,
-  Pessoa, Pix, ResultadoLote, Usuario,
+  Pessoa, Pix, ResultadoLote, ResultadoPrevia, Usuario,
 } from './models';
 
 /** Ponto único de acesso à API. Todo componente passa por aqui. */
@@ -37,6 +37,21 @@ export class ApiService {
       form.append('valorTotal', valorTotal);
     }
     return this.http.post<Fatura>('/api/faturas', form);
+  }
+
+  /**
+   * Sobe a prévia do mês — o CSV da fatura em aberto. Sem valor total: numa
+   * parcial não existe total impresso para conferir.
+   *
+   * Cada subida SUBSTITUI a anterior, e o backend devolve quantas atribuições
+   * sobreviveram: é o número que a tela precisa mostrar, porque sobrescrever
+   * sem perder o trabalho das pessoas é a promessa do recurso inteiro.
+   */
+  subirPrevia(arquivo: File, competencia: string): Observable<ResultadoPrevia> {
+    const form = new FormData();
+    form.append('arquivo', arquivo);
+    form.append('competencia', competencia);
+    return this.http.post<ResultadoPrevia>('/api/faturas/previa', form);
   }
 
   reprocessarFatura(id: number): Observable<Fatura> {

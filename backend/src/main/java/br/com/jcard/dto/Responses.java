@@ -89,6 +89,23 @@ public final class Responses {
         }
     }
 
+    /**
+     * O que uma subida de prévia produziu.
+     *
+     * <p>Os números que a tela precisa dizer em voz alta são os dois do meio: a
+     * prévia é <b>sobrescrita</b>, e quem sobe o arquivo tem de saber que o
+     * trabalho das pessoas sobreviveu — e quanto dele não sobreviveu.
+     *
+     * @param mantidos   atribuições que a leitura nova reaproveitou
+     * @param devolvidos as que não casaram com nenhuma linha do arquivo novo
+     *                   (a compra mudou de valor ou de data, ou sumiu) e
+     *                   voltaram para o pool
+     * @param ignoradas  linhas do CSV que o parser não reconheceu
+     */
+    public record PreviaResponse(FaturaResponse fatura, int lancamentos, int noPool,
+                                 int mantidos, int devolvidos, int ignoradas) {
+    }
+
     /** A parte de uma pessoa numa conta dividida. */
     public record ParteResponse(Long usuarioId, String usuarioNome, BigDecimal valor) {
         public static ParteResponse de(DivisaoLancamento d) {

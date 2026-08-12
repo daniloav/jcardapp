@@ -153,7 +153,7 @@ public class DivisaoService {
         if (l == null) {
             throw new WebApplicationException("Lançamento não encontrado.", 404);
         }
-        if (!l.fatura.aberta()) {
+        if (!l.fatura.aceitaAtribuicao()) {
             throw new WebApplicationException(
                     "A fatura não está mais em avaliação — não dá para mexer na divisão.", 409);
         }

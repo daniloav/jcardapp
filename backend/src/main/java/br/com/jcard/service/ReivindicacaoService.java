@@ -294,7 +294,7 @@ public class ReivindicacaoService {
     }
 
     private void exigirAvaliacaoAberta(Lancamento l) {
-        if (!l.fatura.aberta()) {
+        if (!l.fatura.aceitaAtribuicao()) {
             throw new WebApplicationException("A fatura não está mais em avaliação.", 409);
         }
     }
@@ -330,7 +330,7 @@ public class ReivindicacaoService {
         if (l == null) {
             throw new WebApplicationException("Lançamento não encontrado.", 404);
         }
-        if (!l.fatura.aberta()) {
+        if (!l.fatura.aceitaAtribuicao()) {
             throw new WebApplicationException(
                     "A fatura de " + l.fatura.competencia
                     + " não está em avaliação — fale com o administrador.", 409);

@@ -40,6 +40,19 @@ Três coisas decorrem disso e valem repetir:
 Toda fatura importada dispara e-mail a **todos** os utilizadores ativos pedindo
 avaliação de responsabilidade.
 
+### A prévia: o mês feito aos poucos
+
+A fatura só existe no dia em que fecha, e aí chegam 514 linhas de uma vez. O
+Itaú deixa baixar a **fatura em aberto** a qualquer momento, e é isso que a
+**prévia** carrega: o CSV parcial do mês em curso, subido quantas vezes o admin
+quiser. Cada subida sobrescreve a anterior, e **o que alguém já assumiu continua
+dele** — na prévia seguinte e, no fim, na fatura de verdade, que consome a
+prévia ao ser importada. O trabalho deixa de ser um mutirão no vencimento.
+
+A prévia usa o mesmo pool, a mesma reivindicação, o mesmo conflito, a mesma
+divisão e o mesmo apelido. O que ela **não** faz: acerto, conciliação,
+fechamento, divergência e e-mail — ninguém deve nada por uma parcial.
+
 ### Premissa inegociável: custo US$ 0
 
 **Tudo tem de ser gratuito.** Nenhuma decisão de infra pode gerar cobrança, nem
@@ -85,13 +98,14 @@ jcardapp/
 │       ├── model/              ← entidades (EntidadeBase, Fatura, Lancamento, DivisaoLancamento, ...)
 │       ├── parser/             ← ItauCsvParser (preferido) · ItauFaturaParser (PDF) · ChaveParcelamento
 │       ├── service/            ← Conciliacao, Rateio, Divisao, Atribuicao, Reivindicacao, Acerto,
-│       │                          Apelido, Notificacao
+│       │                          Previa, Apelido, Notificacao
 │       ├── resource/           ← endpoints REST + ErrorMapper
 │       ├── dto/ · security/ · bootstrap/
 │       └── resources/db/migration/  ← V1__schema · V2__divisao_encargos_comprovante
 │                                       V3__reabertura_e_apelidos
 │                                       V4__pagamento_parcial
 │                                       V5__chave_pix_no_banco
+│                                       V6__previa_de_fatura
 ├── frontend/                   ← Angular 17
 │   ├── Dockerfile.runtime · nginx.conf
 │   └── src/
@@ -129,9 +143,10 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 122 testes, incluindo as duas
+- **Backend**: `cd backend && mvn -B verify` — 132 testes, incluindo as duas
   invariantes de conciliação, a atribuição em massa, a divisão de contas, o
-  rateio de encargos, o ciclo
+  rateio de encargos, a prévia que sobrescreve sem perder o que foi assumido e a
+  fatura que herda dela, o ciclo
   de pagamento com comprovante, a herança de parcela, a reabertura da avaliação,
   o fluxo da API por HTTP, as contagens agregadas da listagem e os dois leitores
   de fatura contra fixtures anonimizados (`fatura-itau-exemplo.csv` e `.txt`).
@@ -217,6 +232,41 @@ com troca de senha obrigatória.
 - **A exclusão de fatura apaga o compromisso parcelado à mão.** O resto cai por
   cascata, mas a FK do compromisso é `ON DELETE SET NULL`: ele sobreviveria órfão
   e seguiria atribuindo parcelas a partir de uma fatura que não existe mais.
+- **A prévia é um status da fatura, não uma tabela nova.** Uma linha da prévia é
+  um lançamento igual a qualquer outro e é assumida pelo mesmo caminho; um
+  modelo paralelo para o mês em aberto duplicaria pool, reivindicação, conflito,
+  divisão e apelido — que são o app. `StatusFatura.PREVIA` fica fora do ciclo
+  das outras e nunca vira nenhum deles. Índice único parcial garante **uma
+  prévia por competência**: duas seriam duas telas do mesmo mês, com gente
+  assumindo conta em cada uma.
+- **Sobrescrever a prévia não pode custar o trabalho de ninguém.** É a promessa
+  que sustenta o recurso: se a segunda subida desfizesse o que a primeira
+  rendeu, a família aprendia em uma semana a não mexer na prévia. As atribuições
+  são recapturadas antes de apagar e reaplicadas na leitura nova
+  (`PreviaService.consumir`), e a fatura de verdade herda pelo **mesmo** caminho
+  — é para isso que a prévia existe. Só o que foi decidido por gente (`MANUAL` e
+  `ADMIN`) viaja: as origens automáticas são recalculadas da própria fonte, e
+  uma cópia velha faria uma regra desligada no meio do mês continuar valendo.
+- **A chave que casa os dois arquivos é estrita: data + loja + valor + parcela.**
+  Compra que aparece com outro valor no arquivo novo (a gorjeta entrou, a
+  pré-autorização virou débito) **não** é a mesma compra e volta ao pool. É a
+  mesma regra do `AtribuicaoService`: na dúvida, deixa no pool — reassumir custa
+  um toque, herdar errado cobra de alguém um valor que ela não conferiu. A tela
+  diz quantas voltaram, porque isso o admin não vê acontecer. A fila por chave
+  (e não um valor por chave) existe porque três corridas de R$ 7,35 no mesmo dia
+  podem ser de três pessoas.
+- **A prévia lê o compromisso de parcelamento, mas nunca escreve nele.** Ela é
+  reescrita a cada subida: um compromisso nascido ali apontaria para um
+  lançamento apagado, e registrar a parcela encerraria o compromisso quando a
+  última aparecesse numa parcial — deixando a fatura de verdade, que vem depois,
+  sem de onde herdar. O compromisso nasce na importação da fatura, a partir da
+  atribuição herdada.
+- **A prévia não manda e-mail.** Ela pode subir todo dia; um aviso por subida
+  viraria ruído e treinaria a família a ignorar justamente o e-mail da fatura de
+  verdade. Quem abre o app vê a prévia no primeiro cartão da tela inicial.
+- **A prévia fica fora do gráfico e dos totais da tela inicial.** É um número
+  que ainda vai crescer: somá-lo a "em andamento" anunciaria uma dívida que não
+  existe. Ela tem cartão próprio, no topo, dizendo o que é.
 - **CSV é o caminho principal; PDF é o plano B.** Numa fatura real o CSV leu
   514 de 514 lançamentos sem sobra, enquanto o PDF fechava 2 de 5 cartões: ele
   tem duas colunas, descrições cortadas na largura e cinco tipos de bloco
@@ -310,12 +360,20 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 122 testes verdes (`mvn verify`).
+- ✅ Backend completo, 132 testes verdes (`mvn verify`).
 - ✅ Frontend Angular 17 + PWA compilando (87 kB no bundle inicial).
 - ✅ **Tela inicial (`/inicio`)** — é onde o login cai: gráfico das faturas por mês
    (fechada, em andamento, divergente), os dois totais e "precisa de você", que
    muda de conteúdo para admin e para utilizador. Conferida no app rodando, no
    desktop e no tamanho de celular.
+- ✅ **Prévia da fatura** — subir o CSV do mês em aberto quantas vezes quiser,
+   com o que já foi assumido sobrevivendo à sobrescrita e passando para a fatura
+   de verdade quando ela é importada. Marcada como prévia em toda tela onde
+   aparece (início, lista, contas da pessoa e conciliação). Conferida no app
+   rodando, ponta a ponta: prévia de 7 linhas → 3 atribuições → prévia de 11
+   linhas com as 3 mantidas → fatura fechada nascendo com elas, o compromisso de
+   parcelamento criado só nessa hora e os acertos somando o total ao centavo.
+   Conferida também no tamanho de celular.
 - ✅ **Pagamento parcial e complementar** — o acerto aceita várias
    transferências, cada uma com valor e comprovante; a tela da pessoa mostra
    "já pago / ainda falta" e o admin dá o "recebi" uma a uma. Conferido no app
