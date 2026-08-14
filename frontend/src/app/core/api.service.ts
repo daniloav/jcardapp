@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   Acerto, Cartao, DetalheDoUtilizador, DetalheFatura, Fatura, Lancamento, MinhasContas,
-  Pessoa, Pix, ResultadoLote, ResultadoPrevia, Usuario,
+  Pessoa, Pix, PreviaDoMes, ResultadoLote, ResultadoPrevia, Usuario,
 } from './models';
 
 /** Ponto único de acesso à API. Todo componente passa por aqui. */
@@ -52,6 +52,19 @@ export class ApiService {
     form.append('arquivo', arquivo);
     form.append('competencia', competencia);
     return this.http.post<ResultadoPrevia>('/api/faturas/previa', form);
+  }
+
+  /**
+   * O mês em aberto: a prévia subida (se houver) e as parcelas que os
+   * parcelamentos em curso ainda vão trazer.
+   *
+   * Chamada à parte da lista de faturas porque responde SEM prévia subida — que
+   * é justamente quando ela mais serve: no começo do mês não há CSV nenhum, mas
+   * as parcelas de quem comprou em 10x já são certas.
+   */
+  previaDoMes(competencia?: string): Observable<PreviaDoMes> {
+    const query = competencia ? `?competencia=${competencia}` : '';
+    return this.http.get<PreviaDoMes>(`/api/faturas/previa${query}`);
   }
 
   reprocessarFatura(id: number): Observable<Fatura> {

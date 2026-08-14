@@ -486,6 +486,43 @@ h2 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
   .atribuir { margin-top: 0; flex-wrap: wrap; }
 }
 
+/* --------------------------------------------- parcelas já conhecidas -- */
+
+/* O que o mês em aberto já sabe que vai receber: as parcelas dos parcelamentos
+   que alguém assumiu antes. Bloco à parte, e em roxo como o resto da prévia,
+   porque não são lançamentos — ninguém assume nem racha o que ainda não chegou,
+   e misturá-las com a lista do CSV convidaria a tentar. */
+.previstas {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-radius: var(--raio);
+  background: #f7f2fe;
+  border-left: 4px solid #7c4dd6;
+
+  > .linha { padding: 0.15rem 0; }
+  > .linha strong { font-variant-numeric: tabular-nums; }
+  .meta { color: var(--texto-suave); font-size: 0.85rem; }
+}
+
+.parcelas {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  font-size: 0.9rem;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0;
+    border-top: 1px solid var(--borda);
+  }
+  /* O valor encosta à direita; no celular a linha quebra e ele continua lá. */
+  li > span:first-child { flex: 1 1 8rem; }
+  strong { font-variant-numeric: tabular-nums; margin-left: auto; }
+}
+
 /* ------------------------------------------------- quitação em parcelas -- */
 
 /* O que já entrou e o que falta. Fica em bloco próprio porque é a pergunta que

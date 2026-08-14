@@ -3,7 +3,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
-import { Fatura } from '../core/models';
+import { Fatura, PreviaDoMes } from '../core/models';
 
 /** Em que grupo a fatura entra no gráfico. */
 type Grupo = 'fechada' | 'andamento' | 'divergente';
@@ -71,6 +71,85 @@ interface Pendencia {
           <p class="meta">
             A fatura ainda não fechou e não há nada a pagar. Marcar o que é seu
             agora é o que deixa pouco trabalho no dia do vencimento.
+          </p>
+
+          <!-- O que o CSV ainda não trouxe mas já é certo: as parcelas dos
+               parcelamentos assumidos. Elas entram no mês do mesmo jeito, e o
+               total do arquivo sozinho faz o mês parecer menor do que é. -->
+          @if (previstas().length > 0) {
+            <div class="previstas">
+              <div class="linha">
+                <span>
+                  + {{ totalPrevisto() | currency: 'BRL' : 'symbol' : '1.0-0' }} em
+                  {{ previstas().length === 1
+                      ? (todasAsPessoas() ? '1 parcela já com dono que ainda não entrou'
+                                          : '1 parcela sua que ainda não entrou')
+                      : previstas().length
+                        + (todasAsPessoas() ? ' parcelas já com dono que ainda não entraram'
+                                            : ' parcelas suas que ainda não entraram') }}
+                </span>
+                <!-- A soma só fecha para o admin: o utilizador vê o total do mês
+                     inteiro mas só as parcelas dele, e somar os dois anunciaria
+                     um mês menor do que ele é. -->
+                @if (todasAsPessoas()) {
+                  <strong>{{ totalDoMes() | currency: 'BRL' : 'symbol' : '1.0-0' }}</strong>
+                }
+              </div>
+              <ul class="parcelas">
+                @for (p of previstas(); track $index) {
+                  <li>
+                    <span>{{ p.apelido ?? p.descricaoNormalizada }}</span>
+                    <span class="tag">{{ p.parcela }}/{{ p.parcelaTotal }}</span>
+                    @if (todasAsPessoas()) {
+                      <span class="meta">{{ p.usuarioNome }}</span>
+                    }
+                    <strong>{{ p.valor | currency: 'BRL' }}</strong>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </article>
+      } @else if (previstas().length > 0) {
+
+        <!-- Mês sem CSV nenhum ainda. As parcelas já assumidas são a única coisa
+             que se sabe dele — e são certas, então esconder o mês inteiro por
+             falta de arquivo seria começar do zero um mês que não está em zero. -->
+        <article class="cartao">
+          <div class="linha">
+            <div>
+              <strong>{{ competencia() | date: 'MM/yyyy' }}</strong>
+              <span class="tag previa">mês em aberto</span>
+              <div class="meta">
+                Nenhum CSV subido ainda ·
+                {{ previstas().length }}
+                {{ previstas().length === 1 ? 'parcela' : 'parcelas' }}
+                {{ todasAsPessoas() ? 'já com dono' : 'suas' }} ·
+                {{ totalPrevisto() | currency: 'BRL' : 'symbol' : '1.0-0' }}
+              </div>
+            </div>
+            @if (auth.isAdmin()) {
+              <div>
+                <a class="btn" routerLink="/admin/importar">Subir a prévia do mês</a>
+              </div>
+            }
+          </div>
+          <ul class="parcelas">
+            @for (p of previstas(); track $index) {
+              <li>
+                <span>{{ p.apelido ?? p.descricaoNormalizada }}</span>
+                <span class="tag">{{ p.parcela }}/{{ p.parcelaTotal }}</span>
+                @if (todasAsPessoas()) {
+                  <span class="meta">{{ p.usuarioNome }}</span>
+                }
+                <strong>{{ p.valor | currency: 'BRL' }}</strong>
+              </li>
+            }
+          </ul>
+          <p class="meta">
+            Parcelamento gruda: quem assumiu a primeira parcela segue dono das
+            seguintes até quitar. Estas já entram neste mês, com ou sem CSV — os
+            valores são os da parcela anterior e podem variar alguns centavos.
           </p>
         </article>
       }
@@ -165,6 +244,8 @@ export class InicioComponent {
   auth = inject(AuthService);
 
   faturas = signal<Fatura[]>([]);
+  /** O mês em aberto com as parcelas que ainda vão entrar; null enquanto carrega. */
+  mes = signal<PreviaDoMes | null>(null);
   carregando = signal(true);
 
   /** Um ano de histórico é o que cabe na tela sem virar rolagem infinita. */
@@ -174,6 +255,22 @@ export class InicioComponent {
 
   /** A parcial do mês em curso, quando existe uma. No máximo uma por mês. */
   previa = computed(() => this.faturas().find((f) => f.status === 'PREVIA') ?? null);
+
+  /**
+   * As parcelas que os parcelamentos assumidos ainda vão trazer para este mês.
+   *
+   * <p>Não são lançamentos: não estão no banco e ninguém as assume aqui — elas
+   * já têm dono, que é quem assumiu a primeira parcela. Aparecem porque o mês em
+   * aberto sem elas mostra só metade do que vem por aí, e porque elas existem
+   * antes de qualquer CSV.
+   */
+  previstas = computed(() => this.mes()?.parcelas ?? []);
+  totalPrevisto = computed(() => this.mes()?.totalPrevisto ?? 0);
+  todasAsPessoas = computed(() => this.mes()?.todasAsPessoas ?? false);
+  competencia = computed(() => this.mes()?.competencia ?? null);
+
+  /** O tamanho do mês: o que o arquivo já trouxe mais o que ainda vem. */
+  totalDoMes = computed(() => (this.previa()?.valorTotal ?? 0) + this.totalPrevisto());
 
   /**
    * As faturas de verdade. A prévia fica de fora dos totais, do gráfico e das
@@ -218,6 +315,13 @@ export class InicioComponent {
     this.api.faturas().subscribe({
       next: (f) => { this.faturas.set(f); this.carregando.set(false); },
       error: () => this.carregando.set(false),
+    });
+    // Em paralelo, e sem derrubar a tela se falhar: as parcelas previstas são um
+    // acréscimo ao panorama, não o panorama. Chamada à parte porque responde
+    // mesmo quando não existe prévia nenhuma — e é aí que ela mais importa.
+    this.api.previaDoMes().subscribe({
+      next: (m) => this.mes.set(m),
+      error: () => this.mes.set(null),
     });
   }
 

@@ -6,7 +6,7 @@ import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ToastService } from '../core/toast.service';
 import {
-  Acerto, DetalheDoUtilizador, DetalheFatura, Lancamento, Pagamento, Usuario,
+  Acerto, DetalheDoUtilizador, DetalheFatura, Lancamento, Pagamento, ParcelaPrevista, Usuario,
   descricaoSemParcela, nomeDoLancamento,
 } from '../core/models';
 
@@ -69,6 +69,39 @@ import {
           <div style="margin-top:0.5rem">
             <button type="button" (click)="reprocessar()">Reprocessar do texto guardado</button>
           </div>
+        </div>
+      }
+
+      <!-- O que ainda não veio no arquivo mas já tem dono: as parcelas dos
+           parcelamentos assumidos. Elas não estão no banco e não dá para mexer
+           nelas aqui — o que este bloco responde é "o mês está mesmo só nisto?",
+           que o total do CSV sozinho responde errado. -->
+      @if (previa() && previstas().length > 0) {
+        <h2>Parcelas que ainda vão entrar ({{ previstas().length }})</h2>
+        <div class="cartao">
+          <div class="linha">
+            <span class="meta">
+              Já têm dono por parcelamento assumido antes — não estão no CSV desta
+              subida. Somam
+            </span>
+            <strong>{{ totalPrevisto() | currency: 'BRL' }}</strong>
+          </div>
+          <ul class="parcelas">
+            @for (p of previstas(); track $index) {
+              <li>
+                <span>{{ p.apelido ?? p.descricaoNormalizada }}</span>
+                <span class="tag">{{ p.parcela }}/{{ p.parcelaTotal }}</span>
+                <span class="meta">{{ p.usuarioNome }}</span>
+                <strong>{{ p.valor | currency: 'BRL' }}</strong>
+              </li>
+            }
+          </ul>
+          <p class="meta">
+            Some da lista quando o CSV trouxer a parcela — aí ela vira lançamento,
+            com o valor de verdade e já no nome de quem assumiu. Continuar aqui
+            depois de subir o arquivo do mês inteiro é sinal de conferir: pode ser
+            mês sem cobrança, descrição mudada no banco ou compra quitada por fora.
+          </p>
         </div>
       }
 
@@ -654,6 +687,10 @@ export class AdminFaturaComponent {
 
   detalhe = signal<DetalheFatura | null>(null);
   conflitos = signal<Lancamento[]>([]);
+  /** Na prévia: as parcelas que os parcelamentos em curso ainda vão trazer. */
+  previstas = signal<ParcelaPrevista[]>([]);
+  totalPrevisto = computed(() =>
+    this.previstas().reduce((soma, p) => soma + p.valor, 0));
   utilizadores = signal<Usuario[]>([]);
   excluindo = signal(false);
   reabrindo = signal(false);
@@ -1075,6 +1112,16 @@ export class AdminFaturaComponent {
         const aberta = this.conta()?.usuario.id;
         if (aberta) {
           this.abrirDetalhe(aberta);
+        }
+        // Só na prévia: numa fatura de verdade a parcela ou veio ou não veio, e
+        // previsão sobre um mês fechado não é informação, é ruído.
+        if (r.detalhe.fatura.status === 'PREVIA') {
+          this.api.previaDoMes(r.detalhe.fatura.competencia.slice(0, 7)).subscribe({
+            next: (m) => this.previstas.set(m.parcelas),
+            error: () => this.previstas.set([]),
+          });
+        } else {
+          this.previstas.set([]);
         }
       },
     });

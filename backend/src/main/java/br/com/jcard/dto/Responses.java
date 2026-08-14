@@ -103,7 +103,61 @@ public final class Responses {
      * @param ignoradas  linhas do CSV que o parser não reconheceu
      */
     public record PreviaResponse(FaturaResponse fatura, int lancamentos, int noPool,
-                                 int mantidos, int devolvidos, int ignoradas) {
+                                 int mantidos, int devolvidos, int ignoradas,
+                                 List<ParcelaPrevistaResponse> parcelasConferidas,
+                                 List<ParcelaPrevistaResponse> parcelasAusentes) {
+    }
+
+    /**
+     * Uma parcela que o app já sabe que vem — o compromisso de parcelamento visto
+     * do lado do mês que ainda não fechou.
+     *
+     * @param valor  estimativa: é o valor da parcela que criou o compromisso, e a
+     *               próxima pode variar centavos (ou o câmbio, em compra
+     *               internacional). A tela diz que é estimativa
+     * @param jaVeio se o arquivo desta subida já trouxe esta parcela; só o
+     *               relatório do batimento usa, a previsão em si nunca traz
+     *               {@code true}
+     */
+    public record ParcelaPrevistaResponse(String descricaoNormalizada, String apelido,
+                                          int parcela, int parcelaTotal, BigDecimal valor,
+                                          Long usuarioId, String usuarioNome, boolean jaVeio) {
+
+        public static ParcelaPrevistaResponse de(
+                br.com.jcard.service.ParcelasPrevistasService.Prevista p,
+                Map<String, String> apelidos) {
+            return new ParcelaPrevistaResponse(p.descricaoNormalizada(),
+                    apelidos.get(p.descricaoNormalizada()), p.parcela(), p.parcelaTotal(),
+                    p.valor(), p.usuarioId(), p.usuarioNome(), p.jaVeio());
+        }
+
+        public static List<ParcelaPrevistaResponse> de(
+                List<br.com.jcard.service.ParcelasPrevistasService.Prevista> previstas,
+                Map<String, String> apelidos) {
+            return previstas.stream().map(p -> de(p, apelidos)).toList();
+        }
+    }
+
+    /**
+     * O mês que ainda não fechou, inteiro: o que o CSV já trouxe e o que os
+     * parcelamentos em curso ainda vão trazer.
+     *
+     * <p>Responde mesmo sem prévia subida — é o caso em que ele mais serve. No
+     * dia 1º não há CSV nenhum, mas as parcelas de quem comprou geladeira em 10x
+     * já são certas, e escondê-las faria o mês parecer que começou do zero.
+     *
+     * @param fatura        a prévia subida, ou {@code null} se ainda não subiram
+     *                      nenhuma neste mês
+     * @param parcelas      as previstas de quem está olhando; para o admin, as de
+     *                      todo mundo. É a mesma regra de privacidade do resto do
+     *                      app — parcela prevista é conta que alguém assumiu
+     * @param todasAsPessoas se a lista é de todos (admin) ou só de quem pergunta;
+     *                      a tela precisa saber para não dizer "suas parcelas"
+     *                      quando são as da família inteira
+     */
+    public record PreviaDoMes(LocalDate competencia, FaturaResponse fatura,
+                              List<ParcelaPrevistaResponse> parcelas,
+                              BigDecimal totalPrevisto, boolean todasAsPessoas) {
     }
 
     /** A parte de uma pessoa numa conta dividida. */
@@ -313,7 +367,16 @@ public final class Responses {
      *                      aparecem para quem usou o cartão no mês
      * @param totalCompras  soma das partes dele nos lançamentos
      * @param totalEncargos a fatia dele nos encargos
-     * @param total         quanto ele deve hoje nessa fatura (a soma dos dois)
+     * @param total         quanto ele deve hoje nessa fatura (a soma dos dois).
+     *                      Só o que está lançado: é este o número que o acerto
+     *                      copia, e previsão não vira cobrança
+     * @param parcelasPrevistas na prévia, as parcelas dele que o mês ainda vai
+     *                      receber — os parcelamentos que ele assumiu antes e que
+     *                      grudam até quitar. Sempre vazio na fatura de verdade,
+     *                      onde a parcela ou veio ou não veio
+     * @param totalPrevisto soma delas
+     * @param totalComPrevisto {@code total + totalPrevisto}: o tamanho real do mês
+     *                      dele, que é a pergunta de quem abre a prévia
      */
     public record MinhasContas(FaturaResponse fatura,
                                List<LancamentoResponse> pool,
@@ -322,6 +385,9 @@ public final class Responses {
                                BigDecimal totalCompras,
                                BigDecimal totalEncargos,
                                BigDecimal total,
+                               List<ParcelaPrevistaResponse> parcelasPrevistas,
+                               BigDecimal totalPrevisto,
+                               BigDecimal totalComPrevisto,
                                AcertoResponse acerto,
                                PixResponse pix) {
     }

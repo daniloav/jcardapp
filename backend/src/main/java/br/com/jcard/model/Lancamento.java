@@ -188,6 +188,26 @@ public class Lancamento extends EntidadeBase {
                 .getResultList());
     }
 
+    /**
+     * As chaves de parcelamento que <b>já apareceram</b> nesta leitura.
+     *
+     * <p>É o batimento da prévia: o compromisso promete a parcela do mês, e o
+     * que está aqui é o que o arquivo já trouxe. O que sobra continua sendo
+     * previsão. Casa por chave, e não por valor, porque a parcela pode chegar
+     * com alguns centavos de diferença — é a mesma tolerância do
+     * {@code AtribuicaoService}.
+     */
+    public static java.util.Set<String> chavesParceladasDaFatura(Long faturaId) {
+        return new java.util.HashSet<>(getEntityManager().createQuery("""
+                select distinct l.chaveParcelamento
+                  from Lancamento l
+                 where l.fatura.id = :fatura
+                   and l.chaveParcelamento is not null
+                """, String.class)
+                .setParameter("fatura", faturaId)
+                .getResultList());
+    }
+
     /** Encargos da fatura: IOF, anuidade, juros, ajustes. Sempre rateados. */
     public static List<Lancamento> encargosDaFatura(Long faturaId) {
         return list("fatura.id = ?1 and tipo in ?2 order by dataCompra, id",

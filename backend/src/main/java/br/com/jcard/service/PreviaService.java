@@ -25,8 +25,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.jboss.logging.Logger;
 
 /**
@@ -55,6 +57,12 @@ import org.jboss.logging.Logger;
  * <p>O que a prévia não faz: acerto, conciliação, fechamento e e-mail. Ninguém
  * deve nada por uma parcial, e um aviso por subida — que pode ser diária —
  * treinaria a família a ignorar justamente o e-mail da fatura de verdade.
+ *
+ * <p>O CSV não é a única fonte do mês em aberto. As parcelas dos parcelamentos
+ * já assumidos são certas antes de qualquer arquivo chegar, e o
+ * {@link ParcelasPrevistasService} as mostra ao lado do que foi lido. Quando o
+ * arquivo traz a parcela, ela deixa de ser previsão e vira lançamento — é o
+ * batimento que o {@link Resultado} reporta.
  */
 @ApplicationScoped
 public class PreviaService {
@@ -72,6 +80,9 @@ public class PreviaService {
 
     @Inject
     AuditoriaService auditoria;
+
+    @Inject
+    ParcelasPrevistasService parcelasPrevistas;
 
     // ------------------------------------------------------------ herança --
 
@@ -234,9 +245,13 @@ public class PreviaService {
      * @param mantidos  atribuições que sobreviveram à sobrescrita
      * @param devolvidos as que não casaram com nenhuma linha do arquivo novo e
      *                   voltaram ao pool
+     * @param batimento  o confronto com as parcelas que os compromissos já
+     *                   prometiam para este mês: quais chegaram no arquivo e
+     *                   quais continuam sendo só previsão
      */
     public record Resultado(Fatura fatura, int lancamentos, int noPool,
-                            int mantidos, int devolvidos, int ignoradas) {
+                            int mantidos, int devolvidos, int ignoradas,
+                            ParcelasPrevistasService.Batimento batimento) {
     }
 
     /**
@@ -276,6 +291,11 @@ public class PreviaService {
         // ordem, porque a leitura nova é construída em cima do que a antiga rendeu.
         Heranca heranca = consumir(competencia);
 
+        // O que os parcelamentos em curso prometiam para este mês, antes de olhar
+        // o arquivo. É a metade esperada do batimento; a outra sai das chaves que
+        // a leitura nova trouxer.
+        List<ParcelasPrevistasService.Prevista> esperadas = parcelasPrevistas.prometidas();
+
         Fatura previa = new Fatura();
         previa.competencia = competencia;
         previa.status = StatusFatura.PREVIA;
@@ -296,19 +316,26 @@ public class PreviaService {
         previa.importadaPor = quem;
         previa.persist();
 
+        Set<String> chavesLidas = new HashSet<>();
         for (LancamentoLido lido : lida.lancamentos()) {
             Lancamento l = FaturaImportService.novoLancamento(previa, lido);
             l.persist();
             atribuicao.aplicar(l);
             aplicar(heranca, l, false);
             l.persist();
+            if (l.chaveParcelamento != null) {
+                chavesLidas.add(l.chaveParcelamento);
+            }
         }
+        ParcelasPrevistasService.Batimento batimento =
+                parcelasPrevistas.bater(esperadas, chavesLidas);
 
         int noPool = Lancamento.poolDaFatura(previa.id).size();
         String resumo = "%d lançamentos · %d atribuição(ões) mantida(s) · %d devolvida(s) ao pool "
-                + "· %d no pool%s";
+                + "· %d no pool · %d parcela(s) prevista(s) conferida(s), %d ainda por vir%s";
         resumo = resumo.formatted(lida.lancamentos().size(), heranca.aproveitadas(),
                 heranca.perdidas(), noPool,
+                batimento.conferidas().size(), batimento.ausentes().size(),
                 lida.linhasIgnoradas().isEmpty()
                         ? ""
                         : " · " + lida.linhasIgnoradas().size() + " linha(s) ignorada(s)");
@@ -317,7 +344,8 @@ public class PreviaService {
                 "prévia · " + resumo);
 
         return new Resultado(previa, lida.lancamentos().size(), noPool,
-                heranca.aproveitadas(), heranca.perdidas(), lida.linhasIgnoradas().size());
+                heranca.aproveitadas(), heranca.perdidas(), lida.linhasIgnoradas().size(),
+                batimento);
     }
 
     /**

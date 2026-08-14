@@ -101,6 +101,13 @@ import { ToastService } from '../core/toast.service';
         é outra compra, e herdar cobraria de alguém um número que ela não conferiu.
       </div>
       <div class="aviso info">
+        <strong>As parcelas já assumidas entram sem CSV.</strong> Quem assumiu a
+        1/10 segue dono das nove seguintes, então o app já sabe boa parte do mês
+        antes de qualquer arquivo. Elas aparecem como previsão no início e na tela
+        de cada pessoa; quando o CSV as traz, viram lançamento e a previsão some.
+        O aviso desta subida diz quantas chegaram e quantas ficaram para trás.
+      </div>
+      <div class="aviso info">
         <strong>Só CSV.</strong> O leitor de PDF não lê a fatura inteira, e numa
         prévia não existe total impresso para denunciar a falta — as pessoas
         passariam o mês assumindo contas de uma leitura incompleta.
@@ -188,6 +195,17 @@ export class AdminImportarComponent {
         }
         if (r.devolvidos > 0) {
           partes.push(`${r.devolvidos} mudaram no arquivo novo e voltaram ao pool.`);
+        }
+        // O batimento das parcelas: o que o app já esperava e o arquivo trouxe,
+        // e o que ele esperava e não veio. A segunda metade é a que ninguém vê
+        // sozinho — a previsão some da tela e não fica registro do sumiço.
+        if (r.parcelasConferidas.length > 0) {
+          partes.push(`${r.parcelasConferidas.length} parcela(s) prevista(s) chegaram e já `
+            + 'entraram no nome de quem assumiu.');
+        }
+        if (r.parcelasAusentes.length > 0) {
+          partes.push(`${r.parcelasAusentes.length} parcela(s) esperada(s) não vieram neste `
+            + 'arquivo e continuam previstas.');
         }
         this.toast.ok(partes.join(' '));
         this.router.navigate(['/admin/faturas', r.fatura.id]);

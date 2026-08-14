@@ -60,6 +60,37 @@ public class CompromissoParcelado extends EntidadeBase {
     }
 
     /**
+     * Os compromissos que ainda devem parcela — o que o app <b>já sabe</b> que
+     * vem no mês que não fechou.
+     *
+     * <p>Com {@code join fetch} no dono: quem lê esta lista sempre precisa do
+     * nome e de saber se a pessoa continua ativa, e uma consulta por compromisso
+     * para descobrir isso é latência do Neon multiplicada pelo número de
+     * parcelamentos em curso.
+     */
+    public static java.util.List<CompromissoParcelado> ativos() {
+        return list("""
+                from CompromissoParcelado c
+                join fetch c.usuario
+                where c.ativo = true
+                  and c.ultimaParcelaVista < c.parcelaTotal
+                order by c.descricaoNormalizada, c.id
+                """);
+    }
+
+    /**
+     * A parcela que este compromisso promete para o próximo mês.
+     *
+     * <p>Sai de {@link #ultimaParcelaVista}, que é a mesma fonte que o
+     * {@code AtribuicaoService} usa para casar a parcela quando ela chega de
+     * verdade — prever por outra conta (a distância entre competências, por
+     * exemplo) faria a tela anunciar uma parcela e o arquivo atribuir outra.
+     */
+    public int proximaParcela() {
+        return ultimaParcelaVista + 1;
+    }
+
+    /**
      * Registra que esta parcela foi processada e encerra o compromisso quando a
      * última chega — assim ele não fica pegando compras futuras parecidas.
      */

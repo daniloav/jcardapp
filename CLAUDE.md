@@ -55,6 +55,12 @@ A prévia usa o mesmo pool, a mesma reivindicação, o mesmo conflito, a mesma
 divisão e o mesmo apelido. O que ela **não** faz: acerto, conciliação,
 fechamento, divergência e e-mail — ninguém deve nada por uma parcial.
 
+E o CSV não é a única fonte do mês: as **parcelas dos parcelamentos já
+assumidos** são certas antes de qualquer arquivo, e aparecem como previsão ao
+lado do que foi lido — inclusive quando ainda não há prévia subida. Quando o
+arquivo traz a parcela, ela vira lançamento e a previsão some. É o **batimento**,
+e a subida diz quantas chegaram e quantas ficaram para trás.
+
 ### Premissa inegociável: custo US$ 0
 
 **Tudo tem de ser gratuito.** Nenhuma decisão de infra pode gerar cobrança, nem
@@ -146,10 +152,11 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 142 testes, incluindo as duas
+- **Backend**: `cd backend && mvn -B verify` — 146 testes, incluindo as duas
   invariantes de conciliação, a atribuição em massa, a divisão de contas, o
   rateio de encargos, a prévia que sobrescreve sem perder o que foi assumido e a
-  fatura que herda dela, o ciclo
+  fatura que herda dela, as parcelas previstas do mês em aberto e o batimento
+  delas contra o CSV, o ciclo
   de pagamento com comprovante, a baixa manual do admin e o desfazer dela,
   a herança de parcela, a reabertura da avaliação,
   o fluxo da API por HTTP, as contagens agregadas da listagem e os dois leitores
@@ -270,6 +277,16 @@ com troca de senha obrigatória.
   diz quantas voltaram, porque isso o admin não vê acontecer. A fila por chave
   (e não um valor por chave) existe porque três corridas de R$ 7,35 no mesmo dia
   podem ser de três pessoas.
+- **A parcela que ainda não chegou é prevista, não gravada.** O compromisso já
+  diz o dono, a parcela e o valor: o mês em aberto mostra isso ao lado do que o
+  CSV trouxe, e sem prévia nenhuma é a única coisa que se sabe do mês. Gravar a
+  previsão como lançamento a faria virar pool, virar reivindicação e ser herdada
+  pela fatura de verdade como uma compra que nunca existiu — é a mesma razão do
+  encargo rateado. A previsão some no instante em que o arquivo traz a parcela
+  (batimento pela chave de parcelamento): o lançamento manda, com o valor de
+  verdade, e somar os dois cobraria a mesma parcela duas vezes. Vale só para o
+  mês em aberto — importada a fatura, parcela prometida que não veio é assunto do
+  mês seguinte, não uma linha a mais numa fatura que vai ser conciliada.
 - **A prévia lê o compromisso de parcelamento, mas nunca escreve nele.** Ela é
   reescrita a cada subida: um compromisso nascido ali apontaria para um
   lançamento apagado, e registrar a parcela encerraria o compromisso quando a
@@ -375,7 +392,7 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 142 testes verdes (`mvn verify`).
+- ✅ Backend completo, 146 testes verdes (`mvn verify`).
 - ✅ Frontend Angular 17 + PWA compilando (87 kB no bundle inicial).
 - ✅ **Tela inicial (`/inicio`)** — é onde o login cai: gráfico das faturas por mês
    (fechada, em andamento, divergente), os dois totais e "precisa de você", que
@@ -389,6 +406,14 @@ com troca de senha obrigatória.
    linhas com as 3 mantidas → fatura fechada nascendo com elas, o compromisso de
    parcelamento criado só nessa hora e os acertos somando o total ao centavo.
    Conferida também no tamanho de celular.
+- ✅ **Parcelas previstas no mês em aberto** — o que os parcelamentos assumidos
+   já prometem para o mês aparece no início, na tela da pessoa e na prévia do
+   admin, com ou sem CSV subido; a subida faz o batimento e diz quantas parcelas
+   chegaram e quantas continuam previstas. Conferida no app rodando: as três
+   parcelas de um mês sem CSV nenhum (o mês em aberto achado por cima das faturas
+   já importadas), o "+ R$ 149,90 em parcela sua" na tela do utilizador, e o CSV
+   com a parcela 4/12 nascendo no nome da Maria e saindo da previsão (1
+   conferida, 2 ausentes). Conferida também no tamanho de celular.
 - ✅ **Pagamento parcial e complementar** — o acerto aceita várias
    transferências, cada uma com valor e comprovante; a tela da pessoa mostra
    "já pago / ainda falta" e o admin dá o "recebi" uma a uma. Conferido no app
