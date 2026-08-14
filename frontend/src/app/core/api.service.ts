@@ -3,7 +3,8 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   Acerto, Cartao, DetalheDoUtilizador, DetalheFatura, Fatura, Lancamento, MinhasContas,
-  Pessoa, Pix, PreviaDoMes, ResultadoLote, ResultadoPrevia, Usuario,
+  LinhaConfirmada, Pessoa, Pix, PreviaDoMes, PrintLido, ResultadoLote, ResultadoPrevia,
+  SomaDePrint, Usuario,
 } from './models';
 
 /** Ponto único de acesso à API. Todo componente passa por aqui. */
@@ -52,6 +53,26 @@ export class ApiService {
     form.append('arquivo', arquivo);
     form.append('competencia', competencia);
     return this.http.post<ResultadoPrevia>('/api/faturas/previa', form);
+  }
+
+  /**
+   * Manda ao servidor o texto que o OCR tirou do print e recebe as linhas que
+   * ele entendeu. Não grava nada — quem decide é a tela de conferência.
+   *
+   * O parser fica no backend, e não aqui, pelo mesmo motivo das regexes do PDF:
+   * layout de app muda, e calibrar não pode exigir republicar o frontend.
+   */
+  lerPrint(texto: string, competencia: string): Observable<PrintLido> {
+    return this.http.post<PrintLido>('/api/faturas/previa/print', { texto, competencia });
+  }
+
+  /**
+   * Soma à prévia do mês as linhas confirmadas. SOMA — o print é um pedaço do
+   * mês, e anexar o segundo não pode desfazer o primeiro.
+   */
+  somarAoPrevia(competencia: string, linhas: LinhaConfirmada[]): Observable<SomaDePrint> {
+    return this.http.post<SomaDePrint>('/api/faturas/previa/lancamentos',
+      { competencia, linhas });
   }
 
   /**

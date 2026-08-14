@@ -20,7 +20,22 @@
             "assets": [
               "src/manifest.webmanifest",
               "src/sw.js",
-              { "glob": "**/*", "input": "src/assets", "output": "assets" }
+              { "glob": "**/*", "input": "src/assets", "output": "assets" },
+              {
+                "glob": "worker.min.js",
+                "input": "node_modules/tesseract.js/dist",
+                "output": "assets/ocr"
+              },
+              {
+                "glob": "tesseract-core*-lstm.wasm*",
+                "input": "node_modules/tesseract.js-core",
+                "output": "assets/ocr"
+              },
+              {
+                "glob": "por.traineddata.gz",
+                "input": "node_modules/@tesseract.js-data/por/4.0.0_best_int",
+                "output": "assets/ocr/lang"
+              }
             ],
             "styles": ["src/styles.scss"],
             "scripts": [],

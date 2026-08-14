@@ -9,6 +9,8 @@ import br.com.jcard.model.Fatura;
 import br.com.jcard.model.Lancamento;
 import br.com.jcard.model.Reivindicacao;
 import br.com.jcard.model.Usuario;
+import br.com.jcard.parser.FaturaLida;
+import br.com.jcard.parser.ItauPrintParser;
 import br.com.jcard.security.TokenService;
 import br.com.jcard.security.UsuarioLogado;
 import br.com.jcard.service.AcertoService;
@@ -21,6 +23,7 @@ import br.com.jcard.service.RateioService;
 import br.com.jcard.service.ReivindicacaoService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
+import jakarta.validation.Valid;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -63,6 +66,9 @@ public class FaturaResource {
 
     @Inject
     ParcelasPrevistasService parcelasPrevistas;
+
+    @Inject
+    ItauPrintParser parserPrint;
 
     @Inject
     ConciliacaoService conciliacao;
@@ -153,6 +159,63 @@ public class FaturaResource {
         Map<String, String> apelidos = ApelidoEstabelecimento.mapa();
         return new Responses.PreviaResponse(resumo(r.fatura()), r.lancamentos(), r.noPool(),
                 r.mantidos(), r.devolvidos(), r.ignoradas(),
+                Responses.ParcelaPrevistaResponse.de(r.batimento().conferidas(), apelidos),
+                Responses.ParcelaPrevistaResponse.de(r.batimento().ausentes(), apelidos));
+    }
+
+    /**
+     * Lê o print da fatura em aberto e devolve o que entendeu — <b>sem gravar
+     * nada</b>.
+     *
+     * <p>O OCR roda no navegador e manda o texto; aqui mora o parser, com as
+     * regexes na configuração, pela mesma razão do leitor de PDF: layout de app
+     * muda, e calibrar não pode exigir recompilar. E a resposta é proposta, não
+     * lançamento: quem confirma linha a linha é o admin, olhando a mesma tela de
+     * onde tirou o print. OCR troca dígito, e numa prévia não existe total
+     * impresso para denunciar a troca — é a mesma razão pela qual o PDF nunca foi
+     * aceito aqui.
+     */
+    @POST
+    @Path("/previa/print")
+    @RolesAllowed(TokenService.ADMIN)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Responses.PrintLidoResponse lerPrint(@Valid Requests.TextoDePrint req) {
+        logado.exigirSenhaTrocada();
+        LocalDate mes = mesDe(req.competencia());
+        FaturaLida lida = parserPrint.ler(req.texto(), mes);
+        return new Responses.PrintLidoResponse(mes,
+                lida.lancamentos().stream().map(Responses.LinhaLidaResponse::de).toList(),
+                lida.linhasIgnoradas());
+    }
+
+    /**
+     * Soma à prévia do mês as linhas que o admin confirmou.
+     *
+     * <p><b>Soma</b>, e não substitui — é o contrário do CSV, e é o contrário de
+     * propósito: o CSV é o mês inteiro, o print é um pedaço dele. Anexar o
+     * segundo print não pode desfazer o primeiro.
+     *
+     * <p>Linha idêntica a uma que já está na prévia é descartada em silêncio (só
+     * o número aparece na resposta): quem rola a tela do banco tirando foto
+     * fotografa a mesma compra várias vezes, e isso é muito mais comum do que a
+     * compra idêntica repetida no mesmo dia. Para essa, o caminho é a linha
+     * digitada à mão na tela de conferência.
+     */
+    @POST
+    @Path("/previa/lancamentos")
+    @RolesAllowed(TokenService.ADMIN)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Responses.SomaDePrintResponse somarAoPrevia(@Valid Requests.LinhasDePrint req) {
+        Usuario eu = logado.exigirSenhaTrocada();
+        List<PreviaService.Linha> linhas = req.linhas().stream()
+                .map(l -> new PreviaService.Linha(l.data(), l.descricao(), l.valor(),
+                        l.parcelaAtual(), l.parcelaTotal()))
+                .toList();
+
+        PreviaService.ResultadoSoma r = previas.somar(mesDe(req.competencia()), linhas, eu);
+        Map<String, String> apelidos = ApelidoEstabelecimento.mapa();
+        return new Responses.SomaDePrintResponse(resumo(r.fatura()), r.somados(), r.repetidos(),
+                r.total(), r.noPool(),
                 Responses.ParcelaPrevistaResponse.de(r.batimento().conferidas(), apelidos),
                 Responses.ParcelaPrevistaResponse.de(r.batimento().ausentes(), apelidos));
     }

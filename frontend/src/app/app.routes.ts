@@ -54,6 +54,13 @@ export const rotas: Routes = [
     title: 'Importar fatura · JcardApp',
   },
   {
+    path: 'admin/previa/print',
+    canActivate: [adminGuard],
+    loadComponent: () =>
+      import('./pages/admin-previa-print.component').then((m) => m.AdminPreviaPrintComponent),
+    title: 'Prévia por print · JcardApp',
+  },
+  {
     path: 'admin/faturas/:id',
     canActivate: [adminGuard],
     loadComponent: () =>

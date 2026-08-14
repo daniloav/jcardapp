@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { ToastService } from '../core/toast.service';
 
@@ -19,7 +19,7 @@ import { ToastService } from '../core/toast.service';
  */
 @Component({
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   template: `
     <h1>Subir fatura</h1>
 
@@ -111,6 +111,9 @@ import { ToastService } from '../core/toast.service';
         <strong>Só CSV.</strong> O leitor de PDF não lê a fatura inteira, e numa
         prévia não existe total impresso para denunciar a falta — as pessoas
         passariam o mês assumindo contas de uma leitura incompleta.
+        Sem o CSV em mãos, dá para
+        <a routerLink="/admin/previa/print">montar a prévia por print</a>:
+        cada print soma ao mês, e você confirma linha a linha antes de entrar.
       </div>
     } @else {
       <div class="aviso info">

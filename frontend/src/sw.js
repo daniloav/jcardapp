@@ -37,10 +37,18 @@ self.addEventListener('fetch', (evento) => {
   const url = new URL(req.url);
 
   // Só GET do próprio domínio. API e mutações passam direto para a rede.
+  //
+  // Os arquivos do OCR também ficam de fora, e por um motivo diferente: são uns
+  // 10 MB de WebAssembly e modelo de idioma, e o cache do service worker
+  // concorre com a cota do site inteiro no celular. Encher a cota com eles faria
+  // o navegador despejar o app shell — o app deixaria de abrir offline para que
+  // uma tela usada uma vez por semana abrisse mais rápido. O cache HTTP do
+  // navegador já guarda esses arquivos entre um print e outro.
   if (req.method !== 'GET'
       || url.origin !== self.location.origin
       || url.pathname.startsWith('/api')
-      || url.pathname.startsWith('/q')) {
+      || url.pathname.startsWith('/q')
+      || url.pathname.startsWith('/assets/ocr/')) {
     return;
   }
 

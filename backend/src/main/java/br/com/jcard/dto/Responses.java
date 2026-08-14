@@ -139,6 +139,50 @@ public final class Responses {
     }
 
     /**
+     * O que o leitor entendeu de um print — <b>proposta</b>, não lançamento.
+     *
+     * <p>Nada foi gravado quando isto sai. É a tela de conferência que decide, e
+     * é por isso que a linha vem com os campos separados e editáveis: OCR troca
+     * dígito, e numa prévia não há total impresso para denunciar.
+     *
+     * @param linhaOriginal o pedaço de texto de onde a linha saiu, para o admin
+     *                      comparar com o print sem ter de adivinhar
+     */
+    public record LinhaLidaResponse(LocalDate data, String descricao, BigDecimal valor,
+                                    Integer parcelaAtual, Integer parcelaTotal,
+                                    String tipo, String linhaOriginal) {
+
+        public static LinhaLidaResponse de(br.com.jcard.parser.LancamentoLido l) {
+            return new LinhaLidaResponse(l.dataCompra(), l.descricao(), l.valor(),
+                    l.parcelaAtual(), l.parcelaTotal(), l.tipo().name(), l.linhaOriginal());
+        }
+    }
+
+    /**
+     * A leitura de um print inteiro.
+     *
+     * @param naoReconhecidas o texto que sobrou sem virar linha. Aparece na tela
+     *                        em vez de sumir: é ele que revela um layout novo — e
+     *                        é dali que o admin digita à mão o que faltou
+     */
+    public record PrintLidoResponse(LocalDate competencia, List<LinhaLidaResponse> linhas,
+                                    List<String> naoReconhecidas) {
+    }
+
+    /**
+     * O que uma leva de linhas confirmadas somou à prévia.
+     *
+     * @param repetidas linhas idênticas ao que já estava lá — dois prints
+     *                  pegando a mesma compra, que é o normal de quem rola a
+     *                  tela fotografando. Descartadas, e contadas
+     */
+    public record SomaDePrintResponse(FaturaResponse fatura, int somadas, int repetidas,
+                                      int totalNaPrevia, int noPool,
+                                      List<ParcelaPrevistaResponse> parcelasConferidas,
+                                      List<ParcelaPrevistaResponse> parcelasAusentes) {
+    }
+
+    /**
      * O mês que ainda não fechou, inteiro: o que o CSV já trouxe e o que os
      * parcelamentos em curso ainda vão trazer.
      *

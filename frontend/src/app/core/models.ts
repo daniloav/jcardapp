@@ -112,6 +112,52 @@ export interface PreviaDoMes {
   todasAsPessoas: boolean;
 }
 
+/**
+ * Uma linha que o OCR entendeu de um print — proposta, não lançamento.
+ *
+ * Nada foi gravado quando isto chega. OCR troca dígito, e na prévia não existe
+ * total impresso para denunciar: quem confirma linha a linha é o admin, olhando
+ * a mesma tela de onde tirou o print.
+ */
+export interface LinhaLida {
+  data: string;
+  descricao: string;
+  valor: number;
+  parcelaAtual: number | null;
+  parcelaTotal: number | null;
+  tipo: TipoLancamento;
+  /** O pedaço de texto de onde a linha saiu, para comparar com o print. */
+  linhaOriginal: string;
+}
+
+export interface PrintLido {
+  competencia: string;
+  linhas: LinhaLida[];
+  /** O texto que sobrou sem virar linha — é dele que sai o que falta digitar. */
+  naoReconhecidas: string[];
+}
+
+/** Uma linha como o admin a confirmou — é esta que vira lançamento. */
+export interface LinhaConfirmada {
+  data: string;
+  descricao: string;
+  valor: number;
+  parcelaAtual: number | null;
+  parcelaTotal: number | null;
+}
+
+/** O que uma leva de linhas confirmadas somou à prévia. */
+export interface SomaDePrint {
+  fatura: Fatura;
+  somadas: number;
+  /** Linhas iguais a algo que já estava lá: dois prints pegando a mesma compra. */
+  repetidas: number;
+  totalNaPrevia: number;
+  noPool: number;
+  parcelasConferidas: ParcelaPrevista[];
+  parcelasAusentes: ParcelaPrevista[];
+}
+
 /** Só id e nome: o que o seletor de divisão precisa. */
 export interface Pessoa {
   id: number;

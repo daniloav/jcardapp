@@ -13,6 +13,7 @@ import br.com.jcard.model.Usuario;
 import br.com.jcard.parser.FaturaLida;
 import br.com.jcard.parser.ItauCsvParser;
 import br.com.jcard.parser.LancamentoLido;
+import br.com.jcard.parser.TextoFatura;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -346,6 +347,173 @@ public class PreviaService {
         return new Resultado(previa, lida.lancamentos().size(), noPool,
                 heranca.aproveitadas(), heranca.perdidas(), lida.linhasIgnoradas().size(),
                 batimento);
+    }
+
+    // -------------------------------------------------------------- prints --
+
+    /**
+     * Uma linha que o admin <b>confirmou</b> na tela de conferência do print.
+     *
+     * <p>Vem da tela, e não do leitor, de propósito: o que o OCR entendeu é
+     * proposta, e o que entra na prévia é o que uma pessoa leu e aprovou. Entre
+     * os dois pode haver correção de dígito — é para isso que a conferência
+     * existe.
+     */
+    public record Linha(LocalDate data, String descricao, BigDecimal valor,
+                        Integer parcelaAtual, Integer parcelaTotal) {
+    }
+
+    /**
+     * O que uma leva de linhas confirmadas produziu.
+     *
+     * @param somados   linhas que viraram lançamento
+     * @param repetidos linhas idênticas a algo que já estava na prévia — dois
+     *                  prints com a mesma compra, que é o normal de quem rola a
+     *                  tela tirando foto. Descartadas, mas contadas: sumir em
+     *                  silêncio absoluto esconderia a compra que se repete de
+     *                  verdade no mesmo dia
+     * @param total     quantos lançamentos a prévia tem agora, somando tudo
+     */
+    public record ResultadoSoma(Fatura fatura, int somados, int repetidos, int noPool,
+                                int total, ParcelasPrevistasService.Batimento batimento) {
+    }
+
+    /**
+     * Soma lançamentos à prévia do mês — o caminho do print.
+     *
+     * <p>É o oposto de {@link #subir}, e o oposto é o ponto: o CSV é o mês
+     * inteiro e por isso <b>substitui</b>; um print é um pedaço do mês, e cinco
+     * prints são cinco pedaços que têm de se somar. Se cada print apagasse o
+     * anterior, anexar o segundo desfaria o primeiro.
+     *
+     * <p>Cria a prévia se ainda não houver uma: o primeiro print do mês é o que
+     * dá início a ela. Daí em diante todo print entra na mesma, e um CSV que
+     * apareça depois substitui tudo — ele é a leitura do banco, e o print é o
+     * que se faz na falta dela.
+     *
+     * <p>Cada linha passa pelas mesmas regras automáticas da importação
+     * ({@code AtribuicaoService}), então a parcela de um parcelamento já assumido
+     * nasce no nome do dono aqui também. O que ela <b>não</b> faz é registrar
+     * compromisso — pela mesma razão de sempre: a prévia é provisória.
+     */
+    @Transactional
+    public ResultadoSoma somar(LocalDate mes, List<Linha> linhas, Usuario quem) {
+        LocalDate competencia = mes.withDayOfMonth(1);
+        if (linhas == null || linhas.isEmpty()) {
+            throw new WebApplicationException("Nenhuma linha confirmada para somar.", 400);
+        }
+        Fatura definitiva = Fatura.definitivaDa(competencia);
+        if (definitiva != null) {
+            throw new WebApplicationException(
+                    "A fatura de " + competencia + " já foi importada. O print serve para o mês "
+                    + "que ainda não fechou — abra a fatura para mexer nos lançamentos dela.", 409);
+        }
+
+        List<ParcelasPrevistasService.Prevista> esperadas = parcelasPrevistas.prometidas();
+
+        Fatura previa = Fatura.previaDa(competencia);
+        if (previa == null) {
+            previa = novaPrevia(competencia, quem);
+        }
+
+        // As chaves que já estão na prévia. Um multiset seria o ideal — três
+        // corridas de R$ 7,35 no mesmo dia são três compras —, mas aqui a decisão
+        // foi descartar a repetida sem perguntar: quem tira print rola a tela e
+        // fotografa a mesma linha várias vezes, e isso é muito mais frequente do
+        // que a compra idêntica repetida. A saída para o caso raro é a linha
+        // "adicionar à mão" da tela de conferência, que não passa por aqui.
+        Set<String> jaNaPrevia = new HashSet<>();
+        for (Lancamento l : Lancamento.daFatura(previa.id)) {
+            jaNaPrevia.add(chaveDe(l));
+        }
+
+        int somados = 0;
+        int repetidos = 0;
+        for (Linha linha : linhas) {
+            Lancamento l = FaturaImportService.novoLancamento(previa, deLinha(linha));
+            String chave = chaveDe(l);
+            if (!jaNaPrevia.add(chave)) {
+                repetidos++;
+                continue;
+            }
+            l.persist();
+            atribuicao.aplicar(l);
+            l.persist();
+            somados++;
+        }
+
+        recalcularTotal(previa);
+
+        int noPool = Lancamento.poolDaFatura(previa.id).size();
+        int total = (int) Lancamento.count("fatura.id", previa.id);
+        ParcelasPrevistasService.Batimento batimento = parcelasPrevistas.bater(
+                esperadas, Lancamento.chavesParceladasDaFatura(previa.id));
+
+        String resumo = "%d linha(s) somada(s) · %d repetida(s) descartada(s) · %d no total "
+                + "· %d no pool".formatted(somados, repetidos, total, noPool);
+        LOG.infof("Prévia de %s: %s", competencia, resumo);
+        auditoria.registrar(quem, AcaoAuditoria.IMPORTAR_FATURA, "Fatura", previa.id,
+                "prévia por print · " + resumo);
+
+        return new ResultadoSoma(previa, somados, repetidos, noPool, total, batimento);
+    }
+
+    /**
+     * A prévia que o primeiro print do mês inaugura.
+     *
+     * <p>Sem arquivo, e é o que ela tem de diferente: {@code hashPdf} é a
+     * identidade do arquivo importado e aqui não há arquivo, então vira uma
+     * marca sintética da competência — a coluna é única e obrigatória, e uma
+     * prévia por mês já é garantida pelo índice parcial. {@code textoExtraido}
+     * fica vazio de propósito: ele existe para reprocessar a leitura sem pedir o
+     * arquivo de novo, e reprocessar OCR não faz sentido — o que vale não é o
+     * que a máquina leu, é o que o admin confirmou.
+     */
+    private Fatura novaPrevia(LocalDate competencia, Usuario quem) {
+        Fatura previa = new Fatura();
+        previa.competencia = competencia;
+        previa.status = StatusFatura.PREVIA;
+        previa.valorTotal = BigDecimal.ZERO;
+        previa.valorLancado = BigDecimal.ZERO;
+        previa.hashPdf = "print:" + competencia;
+        previa.emissor = "ITAU_PRINT";
+        previa.importadaPor = quem;
+        previa.persist();
+        return previa;
+    }
+
+    /** O total da prévia é sempre a soma do que ela tem — não há total impresso. */
+    private void recalcularTotal(Fatura previa) {
+        BigDecimal soma = Lancamento.daFatura(previa.id).stream()
+                .map(l -> l.valor)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+        previa.valorTotal = soma;
+        previa.valorLancado = soma;
+        previa.persist();
+    }
+
+    /** Converte a linha confirmada em lançamento, pelas mesmas regras do CSV. */
+    private static LancamentoLido deLinha(Linha linha) {
+        if (linha.data() == null || linha.valor() == null
+                || linha.descricao() == null || linha.descricao().isBlank()) {
+            throw new WebApplicationException(
+                    "Toda linha precisa de data, descrição e valor.", 400);
+        }
+        String descricao = linha.descricao().strip();
+        if (descricao.length() > 255) {
+            descricao = descricao.substring(0, 255);
+        }
+        Integer atual = linha.parcelaAtual();
+        Integer total = linha.parcelaTotal();
+        if (total == null || total < 2 || atual == null || atual < 1 || atual > total) {
+            atual = null;
+            total = null;
+        }
+        BigDecimal valor = linha.valor().setScale(2, RoundingMode.HALF_UP);
+        return new LancamentoLido(linha.data(), descricao, TextoFatura.normalizar(descricao),
+                valor, null, null, atual, total,
+                TextoFatura.classificar(descricao, valor), "print · confirmado à mão");
     }
 
     /**
