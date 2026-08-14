@@ -67,6 +67,49 @@ export interface ResultadoPrevia {
   /** As que não casaram com nenhuma linha do arquivo novo e voltaram ao pool. */
   devolvidos: number;
   ignoradas: number;
+  /** Parcelas que o app já esperava e que este arquivo trouxe. */
+  parcelasConferidas: ParcelaPrevista[];
+  /** As que ele esperava e o arquivo não trouxe — continuam como previsão. */
+  parcelasAusentes: ParcelaPrevista[];
+}
+
+/**
+ * Uma parcela que o mês em aberto ainda vai receber.
+ *
+ * Sai do compromisso de parcelamento: quem assumiu a 1/10 segue dono das nove
+ * seguintes, e isso é sabido antes de qualquer arquivo chegar. Não é lançamento
+ * — não está no banco, não dá para assumir nem rachar. Vira lançamento no dia em
+ * que o CSV a traz.
+ */
+export interface ParcelaPrevista {
+  descricaoNormalizada: string;
+  /** O nome que a família deu à loja, quando alguém já deu. */
+  apelido: string | null;
+  parcela: number;
+  parcelaTotal: number;
+  /** Estimativa: a próxima parcela pode variar centavos, ou o câmbio. */
+  valor: number;
+  usuarioId: number;
+  usuarioNome: string;
+  jaVeio: boolean;
+}
+
+/**
+ * O mês que ainda não fechou, inteiro: o que o CSV já trouxe e o que os
+ * parcelamentos em curso ainda vão trazer.
+ *
+ * Responde mesmo sem prévia subida — é aí que ele mais serve. No dia 1º não há
+ * CSV, mas as parcelas de quem comprou em 10x já são certas.
+ */
+export interface PreviaDoMes {
+  competencia: string;
+  /** A prévia subida, ou null enquanto ninguém subiu CSV neste mês. */
+  fatura: Fatura | null;
+  /** As parcelas de quem está olhando; para o admin, as de todo mundo. */
+  parcelas: ParcelaPrevista[];
+  totalPrevisto: number;
+  /** Se a lista é da família inteira (admin) ou só de quem perguntou. */
+  todasAsPessoas: boolean;
 }
 
 /** Só id e nome: o que o seletor de divisão precisa. */
@@ -181,7 +224,16 @@ export interface MinhasContas {
   encargos: Lancamento[];
   totalCompras: number;
   totalEncargos: number;
+  /** O que está lançado no nome dela hoje — é este número que o acerto copia. */
   total: number;
+  /**
+   * Na prévia, as parcelas dela que o mês ainda vai receber. Sempre vazio na
+   * fatura de verdade, onde a parcela ou veio ou não veio.
+   */
+  parcelasPrevistas: ParcelaPrevista[];
+  totalPrevisto: number;
+  /** `total + totalPrevisto`: o tamanho real do mês dela. */
+  totalComPrevisto: number;
   acerto: Acerto | null;
   pix: Pix;
 }

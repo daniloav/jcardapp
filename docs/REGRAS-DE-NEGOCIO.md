@@ -145,7 +145,38 @@ fora disso o lançamento fica no pool para conferência.
 `AtribuicaoService.valorCompativel` · testes `valorDestoanteNaoAtribui`,
 `arredondamentoDeParcelaAindaCasa`
 
-### 2.4 Desistir desfaz o compromisso
+### 2.4 A parcela do mês que vem já é conhecida — e aparece na prévia
+
+Um compromisso ativo diz o dono, a próxima parcela (`ultimaParcelaVista + 1`) e o
+valor. Isso é sabido **antes** de qualquer arquivo do banco chegar, então o mês em
+aberto mostra essas parcelas como **previstas**, ao lado do que o CSV já trouxe
+(§4.3). Sem elas o mês começa em zero sabendo que não está em zero.
+
+- **nada é gravado** — a previsão sai do compromisso a cada leitura, como o
+  encargo rateado (§1.4). Um lançamento fantasma no banco viraria pool, viraria
+  reivindicação e seria herdado pela fatura de verdade como compra que nunca
+  existiu;
+- **quando o arquivo traz a parcela, a previsão some** — é o batimento, feito
+  pela chave de parcelamento. O lançamento manda, com o valor de verdade; somar
+  os dois cobraria a mesma parcela duas vezes. A resposta da subida diz quantas
+  parcelas chegaram e quantas ficaram para trás, que é o que o admin não vê
+  acontecer;
+- **vale só para o mês em aberto** — importada a fatura daquele mês, o arquivo é
+  a verdade. Parcela prometida que não chegou é assunto do mês seguinte, não uma
+  linha a mais numa fatura que vai ser conciliada;
+- **dono desativado não é previsto** — quando o arquivo chegar a conta dele volta
+  ao pool, e anunciar a parcela no nome de quem não usa mais o app seria previsão
+  que a importação desmente;
+- **é conta de alguém, então respeita a privacidade** (§8): cada um vê as suas; o
+  admin vê as de todos.
+
+O valor é **estimativa**: é o da parcela que criou o compromisso, e a próxima
+pode variar centavos (§2.3) ou o câmbio. As telas dizem isso.
+
+`ParcelasPrevistasService` · `GET /api/faturas/previa` · testes
+`ParcelasPrevistasTest`
+
+### 2.5 Desistir desfaz o compromisso
 
 Só quando quem desiste é o dono do lançamento que **originou** o compromisso.
 
@@ -381,6 +412,10 @@ quiser ao longo do mês.
 - a chave guarda uma **fila**, não um valor: três corridas de R$ 7,35 no mesmo
   dia podem ser de três pessoas, e casar uma a uma mantém a contagem certa.
 
+**O CSV não é a única fonte do mês.** As parcelas dos parcelamentos já assumidos
+entram como previsão, com ou sem arquivo subido (§2.4) — inclusive quando ainda
+não existe prévia nenhuma, que é quando elas são tudo o que se sabe do mês.
+
 **Quando a fatura de verdade daquele mês é importada, ela consome a prévia** pelo
 mesmo caminho: os lançamentos nascem já no nome de quem os assumiu e a prévia
 deixa de existir. É para isso que ela serve.
@@ -396,7 +431,8 @@ O que a prévia **não** faz, e por quê:
 | e-mail | pode subir todo dia; um aviso por subida treinaria a família a ignorar o e-mail da fatura de verdade |
 | PDF | o leitor de PDF não fecha a fatura, e sem total impresso nada denunciaria a falta |
 
-`PreviaService` · `Fatura.aceitaAtribuicao` · testes `PreviaDeFaturaTest`
+`PreviaService` · `ParcelasPrevistasService` · `Fatura.aceitaAtribuicao` · testes
+`PreviaDeFaturaTest`, `ParcelasPrevistasTest`
 
 ## 5. Quitação
 

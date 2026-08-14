@@ -103,6 +103,42 @@ interface Grupo {
             pessoas assumirem as delas — os encargos são divididos entre quem usou
             o cartão. O que vale para pagar é o total da fatura fechada.
           </p>
+
+          <!-- As parcelas que já são dela e ainda não entraram. Ficam fora do
+               total de cima de propósito: aquele número é o que está lançado, e
+               é dele que sai o acerto quando a fatura fechar. Aqui elas são
+               somadas à parte, porque a pergunta de quem abre a prévia é
+               "quanto vou dever no fim do mês?" — e a resposta inclui o que já
+               se sabe que vem. -->
+          @if (d.parcelasPrevistas.length > 0) {
+            <div class="previstas">
+              <div class="linha">
+                <span>
+                  + {{ d.totalPrevisto | currency: 'BRL' }} em
+                  {{ d.parcelasPrevistas.length === 1
+                      ? 'parcela sua que ainda não entrou'
+                      : d.parcelasPrevistas.length + ' parcelas suas que ainda não entraram' }}
+                </span>
+                <strong>{{ d.totalComPrevisto | currency: 'BRL' }}</strong>
+              </div>
+              <ul class="parcelas">
+                @for (p of d.parcelasPrevistas; track $index) {
+                  <li>
+                    <span>{{ p.apelido ?? p.descricaoNormalizada }}</span>
+                    <span class="tag">{{ p.parcela }}/{{ p.parcelaTotal }}</span>
+                    <strong>{{ p.valor | currency: 'BRL' }}</strong>
+                  </li>
+                }
+              </ul>
+              <p class="meta">
+                Você assumiu a primeira parcela destas compras, então as seguintes
+                já são suas até quitar — não há nada a marcar aqui. Elas entram na
+                lista de cima no dia em que aparecerem no arquivo do banco, com o
+                valor de verdade: o daqui é o da parcela anterior e pode variar
+                alguns centavos.
+              </p>
+            </div>
+          }
         }
 
         @if (d.acerto; as a) {

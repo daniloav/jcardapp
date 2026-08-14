@@ -14,6 +14,7 @@ import br.com.jcard.security.UsuarioLogado;
 import br.com.jcard.service.AcertoService;
 import br.com.jcard.service.ConciliacaoService;
 import br.com.jcard.service.FaturaImportService;
+import br.com.jcard.service.ParcelasPrevistasService;
 import br.com.jcard.service.PixConfig;
 import br.com.jcard.service.PreviaService;
 import br.com.jcard.service.RateioService;
@@ -28,6 +29,7 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import java.io.IOException;
@@ -58,6 +60,9 @@ public class FaturaResource {
 
     @Inject
     PreviaService previas;
+
+    @Inject
+    ParcelasPrevistasService parcelasPrevistas;
 
     @Inject
     ConciliacaoService conciliacao;
@@ -145,8 +150,49 @@ public class FaturaResource {
 
         PreviaService.Resultado r = previas.subir(conteudo, arquivo.fileName(),
                 mesDe(competencia), logado.exigirSenhaTrocada());
+        Map<String, String> apelidos = ApelidoEstabelecimento.mapa();
         return new Responses.PreviaResponse(resumo(r.fatura()), r.lancamentos(), r.noPool(),
-                r.mantidos(), r.devolvidos(), r.ignoradas());
+                r.mantidos(), r.devolvidos(), r.ignoradas(),
+                Responses.ParcelaPrevistaResponse.de(r.batimento().conferidas(), apelidos),
+                Responses.ParcelaPrevistaResponse.de(r.batimento().ausentes(), apelidos));
+    }
+
+    /**
+     * O mês em aberto inteiro: o que o CSV já trouxe e o que os parcelamentos em
+     * curso ainda vão trazer.
+     *
+     * <p>Existe separado da listagem porque responde <b>sem prévia subida</b> —
+     * que é justamente quando ele mais serve. No dia 1º ainda não há CSV, mas as
+     * parcelas de quem comprou em 10x já são certas: elas são do mês do mesmo
+     * jeito, e começar a tela em zero esconderia a maior parte do que a pessoa
+     * vai dever.
+     *
+     * <p>Sem {@code competencia}, responde sobre a prévia mais recente — o mês em
+     * aberto não é necessariamente o mês do calendário, já que a fatura fecha
+     * antes do fim dele.
+     */
+    @GET
+    @Path("/previa")
+    @Transactional
+    public Responses.PreviaDoMes previaDoMes(@QueryParam("competencia") String competencia) {
+        Usuario eu = logado.exigirSenhaTrocada();
+        boolean escolhido = competencia != null && !competencia.isBlank();
+        Fatura previa = escolhido
+                ? Fatura.previaDa(mesDe(competencia))
+                : Fatura.previaMaisRecente();
+        LocalDate mes = previa != null ? previa.competencia
+                : (escolhido ? mesDe(competencia) : mesEmAberto());
+
+        boolean todas = eu.admin;
+        List<ParcelasPrevistasService.Prevista> previstas = todas
+                ? parcelasPrevistas.doMesEmAberto(mes)
+                : parcelasPrevistas.doMesEmAberto(mes, eu.id);
+
+        return new Responses.PreviaDoMes(mes,
+                previa == null ? null : resumo(previa),
+                Responses.ParcelaPrevistaResponse.de(previstas, ApelidoEstabelecimento.mapa()),
+                ParcelasPrevistasService.somar(previstas),
+                todas);
     }
 
     @POST
@@ -260,6 +306,19 @@ public class FaturaResource {
                 .map(Responses.LancamentoResponse::minhaParte)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        // Na prévia, o que ainda vai chegar por parcelamento é dela do mesmo
+        // jeito: assumir a 1/10 é assumir as dez. Fica em campo próprio e fora do
+        // `total` porque previsão não é cobrança — o total é o que o acerto copia.
+        List<Responses.ParcelaPrevistaResponse> previstas = f.ehPrevia()
+                ? Responses.ParcelaPrevistaResponse.de(
+                        parcelasPrevistas.doMesEmAberto(f.competencia, eu.id), apelidos)
+                : List.of();
+        BigDecimal totalPrevisto = previstas.stream()
+                .map(Responses.ParcelaPrevistaResponse::valor)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal total = totalCompras.add(totalEncargos);
+
         Acerto a = Acerto.de(id, eu.id);
         return new Responses.MinhasContas(
                 resumo(f),
@@ -268,7 +327,10 @@ public class FaturaResource {
                 encargos,
                 totalCompras,
                 totalEncargos,
-                totalCompras.add(totalEncargos),
+                total,
+                previstas,
+                totalPrevisto,
+                total.add(totalPrevisto),
                 a == null ? null : Responses.AcertoResponse.de(a),
                 pix.atual());
     }
@@ -477,6 +539,24 @@ public class FaturaResource {
                 .map(Responses.LancamentoResponse::minhaParte)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Qual mês está em aberto quando não existe prévia para dizer.
+     *
+     * <p>O primeiro, a partir do corrente, cuja fatura de verdade ainda não foi
+     * importada. O ciclo do cartão fecha antes do fim do mês, e em 25 de agosto,
+     * com agosto já importado, o que está em aberto é setembro — responder
+     * "agosto" ali diria que não vem parcela nenhuma, justo quando elas todas
+     * ainda vêm. O limite de doze é só para não procurar para sempre: quem
+     * importou um ano adiantado não tem mês em aberto para mostrar.
+     */
+    private static LocalDate mesEmAberto() {
+        LocalDate mes = LocalDate.now().withDayOfMonth(1);
+        for (int i = 0; i < 12 && Fatura.definitivaDa(mes) != null; i++) {
+            mes = mes.plusMonths(1);
+        }
+        return mes;
     }
 
     private Fatura buscar(Long id) {

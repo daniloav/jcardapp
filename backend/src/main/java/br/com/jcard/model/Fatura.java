@@ -76,6 +76,18 @@ public class Fatura extends EntidadeBase {
                 competencia.withDayOfMonth(1), StatusFatura.PREVIA).firstResult();
     }
 
+    /**
+     * A prévia mais recente, seja de que mês for.
+     *
+     * <p>Quem pergunta "como está o mês em aberto?" não sabe a competência: a
+     * fatura fecha no dia 20, e em 25 de agosto o mês em aberto é setembro. É o
+     * admin quem escolhe a competência ao subir o CSV, e é essa a resposta.
+     */
+    public static Fatura previaMaisRecente() {
+        return find("status = ?1 order by competencia desc, id desc",
+                StatusFatura.PREVIA).firstResult();
+    }
+
     /** A fatura de verdade daquele mês, se já foi importada. */
     public static Fatura definitivaDa(LocalDate competencia) {
         return find("competencia = ?1 and status <> ?2",
