@@ -127,6 +127,11 @@ export interface Pagamento {
   /** Preenchido quando o admin deu por recebida. */
   confirmadoEm: string | null;
   temComprovante: boolean;
+  /**
+   * O admin que deu baixa em nome da pessoa — quem pagou e não mandou o
+   * comprovante. `null` quando foi ela mesma que declarou, e aí existe anexo.
+   */
+  registradoPor: string | null;
 }
 
 export interface Acerto {

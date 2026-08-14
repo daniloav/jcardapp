@@ -151,6 +151,14 @@ import {
                               <button type="button" class="btn-texto"
                                       (click)="verComprovante(p)">comprovante</button>
                             }
+                            <!-- Baixa sua, sem comprovante: a tela não pode
+                                 mostrá-la igual à que a pessoa declarou com
+                                 prova anexada. -->
+                            @if (p.registradoPor) {
+                              <span class="tag">baixa sua · sem comprovante</span>
+                              <button type="button" class="btn-texto"
+                                      (click)="desfazerBaixa(p, a)">desfazer</button>
+                            }
                             @if (p.confirmadoEm) {
                               <span class="tag ok">recebido</span>
                             } @else {
@@ -162,6 +170,57 @@ import {
                       </ul>
                     } @else {
                       <div class="meta">a pessoa ainda não declarou nenhum pagamento</div>
+                    }
+
+                    <!-- ------------------------------------- baixa manual -- -->
+                    <!-- Quem paga o PIX e nunca abre o app deixaria o acerto
+                         aberto para sempre. Aqui o admin registra pelo extrato:
+                         sem comprovante, com o nome dele no pagamento e um
+                         e-mail para a pessoa poder contestar. -->
+                    @if (podeDarBaixa(a)) {
+                      @if (baixando() !== a.id) {
+                        <button type="button" class="btn-texto"
+                                (click)="abrirBaixa(a)">
+                          Dar baixa sem comprovante
+                        </button>
+                      } @else {
+                        <form class="baixa" (ngSubmit)="darBaixa(a)">
+                          <div class="meta">
+                            Pagou e não mandou o print? Registre pelo extrato.
+                            Fica no seu nome e {{ a.usuarioNome }} recebe e-mail.
+                          </div>
+                          <div class="campos">
+                            <label [attr.for]="'baixa-valor-' + a.id">
+                              Quanto entrou
+                              <input [attr.id]="'baixa-valor-' + a.id" name="valorBaixa"
+                                     type="text" inputmode="decimal"
+                                     [ngModel]="baixaValor()"
+                                     (ngModelChange)="baixaValor.set($event)"
+                                     [placeholder]="emReais(a.saldo) + ' (o que falta)'">
+                            </label>
+                            <label [attr.for]="'baixa-data-' + a.id">
+                              Quando
+                              <input [attr.id]="'baixa-data-' + a.id" name="dataBaixa"
+                                     type="date" [ngModel]="baixaData()"
+                                     (ngModelChange)="baixaData.set($event)">
+                            </label>
+                          </div>
+                          <label [attr.for]="'baixa-obs-' + a.id">
+                            De onde saiu
+                            <input [attr.id]="'baixa-obs-' + a.id" name="obsBaixa" type="text"
+                                   [ngModel]="baixaObs()" (ngModelChange)="baixaObs.set($event)"
+                                   placeholder="PIX de 12/08 no extrato, dinheiro na mão…">
+                          </label>
+                          <div class="linha">
+                            <button type="submit" [disabled]="salvandoBaixa()">
+                              Registrar pagamento
+                            </button>
+                            <button type="button" class="btn-texto" (click)="cancelarBaixa()">
+                              Cancelar
+                            </button>
+                          </div>
+                        </form>
+                      }
                     }
                   </td>
                   <td>
@@ -605,6 +664,12 @@ export class AdminFaturaComponent {
   /** Para quem vai o resultado inteiro da busca. */
   donoEmMassa = signal<number | null>(null);
   atribuindoEmMassa = signal(false);
+  /** O acerto com o formulário de baixa aberto — um de cada vez. */
+  baixando = signal<number | null>(null);
+  baixaValor = signal('');
+  baixaData = signal('');
+  baixaObs = signal('');
+  salvandoBaixa = signal(false);
   /** A conta que está aberta para conferência, e de quem. */
   pessoaDetalhe = signal<number | null>(null);
   conta = signal<DetalheDoUtilizador | null>(null);
@@ -929,8 +994,64 @@ export class AdminFaturaComponent {
     });
   }
 
-  private emReais(valor: number): string {
+  emReais(valor: number): string {
     return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
+  // ------------------------------------------------------- baixa manual --
+
+  /**
+   * A baixa só existe com o valor congelado — é a mesma regra do aceite e do
+   * pagamento. E não se dá baixa em acerto já confirmado: reabra antes.
+   */
+  podeDarBaixa(a: Acerto): boolean {
+    const status = this.detalhe()?.fatura.status;
+    return (status === 'CONCILIADA' || status === 'FECHADA') && a.status !== 'CONFIRMADO';
+  }
+
+  abrirBaixa(a: Acerto): void {
+    this.baixaValor.set('');
+    this.baixaData.set(new Date().toISOString().slice(0, 10));
+    this.baixaObs.set('');
+    this.baixando.set(a.id);
+  }
+
+  cancelarBaixa(): void {
+    this.baixando.set(null);
+  }
+
+  /**
+   * Registra o pagamento em nome da pessoa. Em branco, o valor vale "pagou o
+   * que faltava" — é o caso comum, e redigitar o número que a tela mostrou só
+   * cria divergência de centavo.
+   */
+  darBaixa(a: Acerto): void {
+    this.salvandoBaixa.set(true);
+    this.api.registrarBaixa(a.id, this.baixaValor(), this.baixaData(), this.baixaObs())
+      .subscribe({
+        next: (atualizado) => {
+          this.salvandoBaixa.set(false);
+          this.baixando.set(null);
+          this.toast.ok(atualizado.saldo > 0
+            ? `Baixa registrada para ${a.usuarioNome}. Ainda faltam `
+              + `${this.emReais(atualizado.saldo)}.`
+            : `Conta de ${a.usuarioNome} quitada. Ela recebeu o aviso por e-mail.`);
+          this.carregar();
+        },
+        error: () => this.salvandoBaixa.set(false),
+      });
+  }
+
+  /** Desfaz a baixa que você registrou — a saída para o valor digitado errado. */
+  desfazerBaixa(p: Pagamento, a: Acerto): void {
+    const ok = confirm(`Desfazer a baixa de ${this.emReais(p.valor)} de ${a.usuarioNome}?\n\n`
+      + 'A conta volta a ficar em aberto pelo valor todo que não estiver pago.');
+    if (!ok) {
+      return;
+    }
+    this.api.excluirBaixa(p.id).subscribe({
+      next: () => { this.toast.ok('Baixa desfeita.'); this.carregar(); },
+    });
   }
 
   reabrir(a: Acerto): void {

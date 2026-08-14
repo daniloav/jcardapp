@@ -35,7 +35,9 @@ Três coisas decorrem disso e valem repetir:
 - **Pagar exige aceitar antes.** `ABERTO → ACEITO → INFORMADO → CONFIRMADO`, com
   comprovante obrigatório do PIX. O aceite só abre com a fatura conciliada, que é
   quando o valor para de mudar. A quitação pode vir em **várias transferências**:
-  cada uma com valor e comprovante, e o acerto só fecha com saldo zero.
+  cada uma com valor e comprovante, e o acerto só fecha com saldo zero. Quem
+  pagou e não mandou o print recebe a **baixa manual** do admin — sem
+  comprovante, no nome dele e com aviso à pessoa.
 
 Toda fatura importada dispara e-mail a **todos** os utilizadores ativos pedindo
 avaliação de responsabilidade.
@@ -106,6 +108,7 @@ jcardapp/
 │                                       V4__pagamento_parcial
 │                                       V5__chave_pix_no_banco
 │                                       V6__previa_de_fatura
+│                                       V7__baixa_manual
 ├── frontend/                   ← Angular 17
 │   ├── Dockerfile.runtime · nginx.conf
 │   └── src/
@@ -143,11 +146,12 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 132 testes, incluindo as duas
+- **Backend**: `cd backend && mvn -B verify` — 142 testes, incluindo as duas
   invariantes de conciliação, a atribuição em massa, a divisão de contas, o
   rateio de encargos, a prévia que sobrescreve sem perder o que foi assumido e a
   fatura que herda dela, o ciclo
-  de pagamento com comprovante, a herança de parcela, a reabertura da avaliação,
+  de pagamento com comprovante, a baixa manual do admin e o desfazer dela,
+  a herança de parcela, a reabertura da avaliação,
   o fluxo da API por HTTP, as contagens agregadas da listagem e os dois leitores
   de fatura contra fixtures anonimizados (`fatura-itau-exemplo.csv` e `.txt`).
 - **Frontend**: `cd frontend && npx ng build`.
@@ -206,6 +210,17 @@ com troca de senha obrigatória.
   saldo (`devido - Σ pagos`) é calculado a cada leitura, nunca gravado; o admin
   confirma uma de cada vez; e o acerto só fecha com tudo confirmado E saldo
   zero. Reabrir mantém os pagamentos: o dinheiro saiu.
+- **A baixa manual guarda quem a registrou, e é a única apagável.** O
+  comprovante continua obrigatório para o utilizador declarar o pagamento, mas
+  parte das pessoas paga o PIX e nunca abre o app: o acerto delas ficaria
+  `ABERTO` para sempre e a fatura não fecharia com o dinheiro já na conta — e o
+  admin acabaria confirmando de cabeça. Ele registra a transferência em nome
+  dela, já confirmada (quem registra é quem está olhando o extrato), e o
+  pagamento carrega `registrado_por`: sem comprovante, essa é a única prova, e as
+  duas origens não podem ficar indistinguíveis na tela. A pessoa recebe e-mail,
+  porque lançamento sem prova que ela não fica sabendo não é contestável. E é a
+  única que dá para apagar — no pagamento declarado, apagar é apagar a prova de
+  que o dinheiro saiu; nele o caminho é reabrir o acerto.
 - **Divisão manda no rateio.** Havendo linhas em `divisao_lancamento`, elas são a
   verdade daquele lançamento e o `responsavel` passa a valer só como "quem
   organizou" — continua preenchido porque é dele que o compromisso parcelado tira
@@ -360,7 +375,7 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 132 testes verdes (`mvn verify`).
+- ✅ Backend completo, 142 testes verdes (`mvn verify`).
 - ✅ Frontend Angular 17 + PWA compilando (87 kB no bundle inicial).
 - ✅ **Tela inicial (`/inicio`)** — é onde o login cai: gráfico das faturas por mês
    (fechada, em andamento, divergente), os dois totais e "precisa de você", que
@@ -378,6 +393,14 @@ com troca de senha obrigatória.
    transferências, cada uma com valor e comprovante; a tela da pessoa mostra
    "já pago / ainda falta" e o admin dá o "recebi" uma a uma. Conferido no app
    rodando (R$ 100 + R$ 293,24 fechando R$ 393,24) e no tamanho de celular.
+- ✅ **Baixa manual do admin** — registrar o pagamento de quem pagou e não mandou
+   o comprovante, cheio ou parcial, com o nome de quem registrou no lugar da
+   prova, e-mail para a pessoa e desfazer para o valor digitado errado. Conferida
+   no app rodando: baixa cheia quitando R$ 53,33, a mesma linha aparecendo como
+   "registrado por Titular do cartao" na tela do utilizador, baixa parcial de
+   R$ 20 deixando "faltam R$ 33,33", e as recusas (fatura em avaliação, apagar
+   pagamento com comprovante, utilizador tentando dar baixa). Conferida também no
+   tamanho de celular.
 - ✅ Conta dividida, encargo rateado, aceite com comprovante de PIX e exclusão de
    fatura — implementados e conferidos no app rodando.
 - ✅ **Fluxo de indicação (ROADMAP §2)** — reabrir a avaliação, admin atribuir

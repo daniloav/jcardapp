@@ -52,12 +52,36 @@ public class PagamentoAcerto extends EntidadeBase {
     @JoinColumn(name = "confirmado_por")
     public Usuario confirmadoPor;
 
+    /**
+     * O admin que deu baixa em nome da pessoa; {@code null} quando foi ela
+     * mesma que declarou.
+     *
+     * <p>Preenchido, é uma transferência <b>sem comprovante</b>: quem paga o PIX
+     * e nunca abre o app deixaria o acerto aberto para sempre, e o admin, que vê
+     * a entrada no extrato, registra por ela. A coluna existe porque as duas
+     * origens não podem ficar indistinguíveis — uma tem prova anexada, a outra
+     * tem a palavra de quem registrou, e é essa diferença que a tela mostra.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "registrado_por")
+    public Usuario registradoPor;
+
     public boolean confirmado() {
         return confirmadoEm != null;
     }
 
+    /** Baixa dada pelo admin, sem comprovante — ver {@link #registradoPor}. */
+    public boolean baixaManual() {
+        return registradoPor != null;
+    }
+
     public static List<PagamentoAcerto> doAcerto(Long acertoId) {
         return list("acerto.id = ?1 order by pagoEm, id", acertoId);
+    }
+
+    /** Todas as transferências da fatura, numa consulta só. */
+    public static List<PagamentoAcerto> daFatura(Long faturaId) {
+        return list("acerto.fatura.id = ?1 order by pagoEm, id", faturaId);
     }
 
     /** Quanto já entrou neste acerto, confirmado ou não. */
