@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Payloads de entrada da API, agrupados por serem pequenos e sempre lidos juntos.
@@ -110,6 +111,41 @@ public final class Requests {
             java.math.BigDecimal valor,
             java.time.LocalDate pagoEm,
             @Size(max = 400) String observacao) {
+    }
+
+    /**
+     * O texto que o OCR do navegador tirou de um print da fatura em aberto.
+     *
+     * <p>Vem texto, e não a imagem: o reconhecimento roda no aparelho de quem
+     * subiu o print. A VM tem 1 GB e uma vCPU dividida com o banco de dados —
+     * fazer OCR ali derrubaria o app no meio do mês, e mandar imagem para o
+     * servidor guardaria foto de fatura em disco sem necessidade.
+     */
+    public record TextoDePrint(
+            @NotBlank(message = "Não veio texto nenhum do print.") String texto,
+            @NotBlank String competencia) {
+    }
+
+    /**
+     * As linhas que o admin conferiu e aprovou, prontas para virar lançamento.
+     *
+     * <p>Separado da leitura de propósito: o OCR propõe, uma pessoa confirma. É
+     * o que impede um dígito trocado ("189,00" lido como "180,00") de virar
+     * cobrança — numa prévia não existe total impresso para denunciar a
+     * diferença.
+     */
+    public record LinhasDePrint(
+            @NotBlank String competencia,
+            @NotNull @Size(min = 1, message = "Confirme ao menos uma linha.")
+            List<Linha> linhas) {
+
+        public record Linha(
+                @NotNull java.time.LocalDate data,
+                @NotBlank @Size(max = 255) String descricao,
+                @NotNull java.math.BigDecimal valor,
+                Integer parcelaAtual,
+                Integer parcelaTotal) {
+        }
     }
 
     public record Cartao(

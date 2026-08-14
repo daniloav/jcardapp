@@ -78,6 +78,42 @@ public final class TextoFatura {
     }
 
     /**
+     * O que a linha é, pela descrição: compra, estorno, IOF, anuidade, encargo.
+     *
+     * <p>Fica aqui, e não no leitor de CSV onde nasceu, porque a classificação é
+     * do <b>domínio</b> e não do formato: "IOF" é encargo tenha vindo de um CSV,
+     * de um PDF ou de um print lido por OCR. Duas cópias divergiriam, e a que
+     * divergisse deixaria um encargo virar compra reivindicável — alguém
+     * assumiria sozinho o IOF que é de todo mundo.
+     *
+     * <p>Não mexe no sinal do valor: quem lê já traz o sinal certo.
+     */
+    public static br.com.jcard.model.TipoLancamento classificar(String descricao,
+                                                                BigDecimal valor) {
+        String d = normalizar(descricao);
+        if (d.contains("PAGAMENTO") && (d.contains("EFETUADO") || d.contains("FATURA"))) {
+            return br.com.jcard.model.TipoLancamento.PAGAMENTO;
+        }
+        if (d.contains("ESTORNO") || d.contains("DEVOLUCAO") || d.contains("CANCELAMENTO")
+                || d.contains("DESC ANTECIPA")) {
+            return br.com.jcard.model.TipoLancamento.ESTORNO;
+        }
+        if (d.contains("ANUIDADE")) {
+            return br.com.jcard.model.TipoLancamento.ANUIDADE;
+        }
+        if (d.contains("IOF")) {
+            return br.com.jcard.model.TipoLancamento.IOF;
+        }
+        if (d.contains("JUROS") || d.contains("MULTA") || d.contains("ENCARGO")
+                || d.contains("MORA") || d.contains("SEGURO") || d.contains("ENVIO MENS")) {
+            return br.com.jcard.model.TipoLancamento.ENCARGO;
+        }
+        return valor.signum() < 0
+                ? br.com.jcard.model.TipoLancamento.ESTORNO
+                : br.com.jcard.model.TipoLancamento.COMPRA;
+    }
+
+    /**
      * Completa o ano de uma data {@code dd/MM} da fatura.
      *
      * <p>A fatura de janeiro traz compras de dezembro: se o mês do lançamento é

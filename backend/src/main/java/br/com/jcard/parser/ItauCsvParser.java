@@ -136,7 +136,7 @@ public class ItauCsvParser implements FaturaParser {
                 }
             }
 
-            TipoLancamento tipo = classificar(descricao, valor);
+            TipoLancamento tipo = TextoFatura.classificar(descricao, valor);
 
             return new LancamentoLido(
                     dataCompra,
@@ -159,29 +159,4 @@ public class ItauCsvParser implements FaturaParser {
         return i >= 0 && i < c.length ? c[i].strip() : "";
     }
 
-    /**
-     * Classifica pela descrição. No CSV o sinal já vem correto, então aqui não
-     * mexemos no valor — só rotulamos o que não é compra reivindicável.
-     */
-    private TipoLancamento classificar(String descricao, BigDecimal valor) {
-        String d = TextoFatura.normalizar(descricao);
-        if (d.contains("PAGAMENTO") && (d.contains("EFETUADO") || d.contains("FATURA"))) {
-            return TipoLancamento.PAGAMENTO;
-        }
-        if (d.contains("ESTORNO") || d.contains("DEVOLUCAO") || d.contains("CANCELAMENTO")
-                || d.contains("DESC ANTECIPA")) {
-            return TipoLancamento.ESTORNO;
-        }
-        if (d.contains("ANUIDADE")) {
-            return TipoLancamento.ANUIDADE;
-        }
-        if (d.contains("IOF")) {
-            return TipoLancamento.IOF;
-        }
-        if (d.contains("JUROS") || d.contains("MULTA") || d.contains("ENCARGO")
-                || d.contains("MORA") || d.contains("SEGURO") || d.contains("ENVIO MENS")) {
-            return TipoLancamento.ENCARGO;
-        }
-        return valor.signum() < 0 ? TipoLancamento.ESTORNO : TipoLancamento.COMPRA;
-    }
 }

@@ -416,6 +416,38 @@ quiser ao longo do mês.
 entram como previsão, com ou sem arquivo subido (§2.4) — inclusive quando ainda
 não existe prévia nenhuma, que é quando elas são tudo o que se sabe do mês.
 
+### 4.3.1 A prévia montada a print
+
+Nem sempre o CSV está ao alcance: no celular o que dá para tirar do app do banco
+é print. O admin anexa um print de cada vez, o OCR roda **no navegador** e o
+texto vai para o `ItauPrintParser`, com as regexes na configuração
+(`jcard.parser.itau.print.*`) pelo mesmo motivo das do PDF.
+
+- **o que a leitura entende é proposta** — nada entra sem o admin confirmar linha
+  a linha, com data, loja, valor e parcela editáveis. OCR troca dígito, e a
+  prévia não tem total impresso para denunciar: é a mesma razão pela qual o PDF
+  nunca foi aceito nela (§4.3);
+- **o leitor não conserta dígito de valor** — o que não fecha volta como "não
+  reconhecido" e é digitado à mão. A exceção é o dígito da **data** ("O5 ago"),
+  e a fronteira é essa: data não é dinheiro, e o admin ainda a vê num seletor;
+- **só emite bloco completo** (data + loja + valor). É o que impede "Total desta
+  fatura R$ 1.234,56" de virar compra: total não tem data;
+- **print soma, CSV substitui** — um print é um pedaço do mês; se o segundo
+  apagasse o primeiro, anexar seria trabalho jogado fora. O CSV, que é o mês
+  inteiro, continua substituindo tudo (e preserva o que foi assumido, §4.3);
+- **linha repetida é descartada em silêncio**, só o número aparece: quem rola a
+  tela fotografando pega a mesma compra várias vezes. Para a compra idêntica
+  repetida de verdade no mesmo dia, o caminho é "adicionar linha à mão";
+- as regras automáticas valem igual: a parcela de um parcelamento já assumido
+  **nasce com dono** também por aqui (§2.1), e a prévia continua sem registrar
+  compromisso;
+- a prévia nascida de print não guarda `textoExtraido`: reprocessar OCR não faz
+  sentido, porque o que vale não é o que a máquina leu, é o que o admin
+  confirmou.
+
+`ItauPrintParser` · `PreviaService.somar` · `POST /api/faturas/previa/print` e
+`/previa/lancamentos` · testes `PreviaPorPrintTest`
+
 **Quando a fatura de verdade daquele mês é importada, ela consome a prévia** pelo
 mesmo caminho: os lançamentos nascem já no nome de quem os assumiu e a prévia
 deixa de existir. É para isso que ela serve.

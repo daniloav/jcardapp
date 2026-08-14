@@ -61,6 +61,12 @@ lado do que foi lido — inclusive quando ainda não há prévia subida. Quando 
 arquivo traz a parcela, ela vira lançamento e a previsão some. É o **batimento**,
 e a subida diz quantas chegaram e quantas ficaram para trás.
 
+Quando nem o CSV está ao alcance — no celular o que dá para tirar do app do
+banco é print —, a prévia também se monta **a print**. O OCR roda no navegador,
+o que ele lê é **proposta**, e o admin confirma linha a linha antes de somar.
+Cada print **soma** ao mês, em vez de substituir: um print é um pedaço, e o
+segundo não pode desfazer o primeiro.
+
 ### Premissa inegociável: custo US$ 0
 
 **Tudo tem de ser gratuito.** Nenhuma decisão de infra pode gerar cobrança, nem
@@ -104,7 +110,8 @@ jcardapp/
 │   ├── Dockerfile.runtime      ← SÓ empacota (o build é no runner) — ver §6
 │   └── src/main/java/br/com/jcard/
 │       ├── model/              ← entidades (EntidadeBase, Fatura, Lancamento, DivisaoLancamento, ...)
-│       ├── parser/             ← ItauCsvParser (preferido) · ItauFaturaParser (PDF) · ChaveParcelamento
+│       ├── parser/             ← ItauCsvParser (preferido) · ItauFaturaParser (PDF)
+│       │                          ItauPrintParser (OCR do print) · ChaveParcelamento
 │       ├── service/            ← Conciliacao, Rateio, Divisao, Atribuicao, Reivindicacao, Acerto,
 │       │                          Previa, Apelido, Notificacao
 │       ├── resource/           ← endpoints REST + ErrorMapper
@@ -152,11 +159,12 @@ com troca de senha obrigatória.
 
 ## 5. Como validar mudanças
 
-- **Backend**: `cd backend && mvn -B verify` — 146 testes, incluindo as duas
+- **Backend**: `cd backend && mvn -B verify` — 157 testes, incluindo as duas
   invariantes de conciliação, a atribuição em massa, a divisão de contas, o
   rateio de encargos, a prévia que sobrescreve sem perder o que foi assumido e a
   fatura que herda dela, as parcelas previstas do mês em aberto e o batimento
-  delas contra o CSV, o ciclo
+  delas contra o CSV, a prévia montada a print (leitura do OCR, prints que se
+  somam e linha repetida descartada), o ciclo
   de pagamento com comprovante, a baixa manual do admin e o desfazer dela,
   a herança de parcela, a reabertura da avaliação,
   o fluxo da API por HTTP, as contagens agregadas da listagem e os dois leitores
@@ -277,6 +285,28 @@ com troca de senha obrigatória.
   diz quantas voltaram, porque isso o admin não vê acontecer. A fila por chave
   (e não um valor por chave) existe porque três corridas de R$ 7,35 no mesmo dia
   podem ser de três pessoas.
+- **O OCR do print roda no navegador, e o que ele lê é proposta.** Duas decisões
+  numa. A primeira é onde: a e2-micro tem 1 GB e uma vCPU dividida com o Quarkus
+  — reconhecer imagem ali derrubaria o app no meio do mês, e mandar a foto para o
+  servidor guardaria imagem de fatura em disco sem necessidade. O motor
+  (WebAssembly) e o modelo de português vêm de `/assets/ocr`, copiados do
+  `node_modules` no build, sem CDN e sem binário no git; carregam sob demanda, e
+  o service worker **não** os cacheia (uns 10 MB encheriam a cota do site no
+  celular e o navegador despejaria o app shell). A segunda é o que se faz com a
+  leitura: nada entra sem o admin confirmar linha a linha. OCR troca dígito, e a
+  prévia não tem total impresso para denunciar — é a mesma razão pela qual o PDF
+  nunca foi aceito nela. O leitor **não conserta dígito de valor**: o que não
+  fecha volta como "não reconhecido", para ser digitado. A exceção é o dígito da
+  **data** ("O5 ago"), e a fronteira é essa: data não é dinheiro.
+- **Print soma; CSV substitui.** O CSV é o mês inteiro, então sobrescrever é
+  correto. Um print é um pedaço do mês, e cinco prints são cinco pedaços: se o
+  segundo apagasse o primeiro, anexar seria trabalho jogado fora. Linha idêntica
+  a uma que já está lá é descartada em silêncio (só o número aparece) — quem rola
+  a tela do banco fotografa a mesma compra várias vezes, e isso é muito mais
+  comum do que a compra idêntica repetida no mesmo dia; para essa, o caminho é a
+  linha digitada à mão. A prévia nascida de print não guarda `textoExtraido`:
+  reprocessar OCR não faz sentido, porque o que vale não é o que a máquina leu, é
+  o que o admin confirmou.
 - **A parcela que ainda não chegou é prevista, não gravada.** O compromisso já
   diz o dono, a parcela e o valor: o mês em aberto mostra isso ao lado do que o
   CSV trouxe, e sem prévia nenhuma é a única coisa que se sabe do mês. Gravar a
@@ -392,7 +422,7 @@ com troca de senha obrigatória.
 
 ## 9. Estado do projeto
 
-- ✅ Backend completo, 146 testes verdes (`mvn verify`).
+- ✅ Backend completo, 157 testes verdes (`mvn verify`).
 - ✅ Frontend Angular 17 + PWA compilando (87 kB no bundle inicial).
 - ✅ **Tela inicial (`/inicio`)** — é onde o login cai: gráfico das faturas por mês
    (fechada, em andamento, divergente), os dois totais e "precisa de você", que
@@ -406,6 +436,15 @@ com troca de senha obrigatória.
    linhas com as 3 mantidas → fatura fechada nascendo com elas, o compromisso de
    parcelamento criado só nessa hora e os acertos somando o total ao centavo.
    Conferida também no tamanho de celular.
+- ✅ **Prévia montada a print** (`/admin/previa/print`) — para quem não consegue
+   o CSV: anexa print do app do banco, o OCR roda no navegador, o admin confere
+   linha a linha (com data, loja, valor e parcela editáveis, e "adicionar linha à
+   mão") e cada leva **soma** ao mês. Conferida no app rodando com prints
+   gerados na tela: 4 linhas lidas de um print, a parcela 2/10 nascendo no nome
+   de quem assumiu a 1/10, um segundo print somando 1 e descartando 2 repetidas,
+   e o batimento das parcelas previstas. No caminho, dois defeitos que só o OCR
+   de verdade revela: `O5 ago` (zero lido como letra) e a linha da parcela
+   chegando depois do valor. Conferida também no tamanho de celular.
 - ✅ **Parcelas previstas no mês em aberto** — o que os parcelamentos assumidos
    já prometem para o mês aparece no início, na tela da pessoa e na prévia do
    admin, com ou sem CSV subido; a subida faz o batimento e diz quantas parcelas

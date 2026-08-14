@@ -48,6 +48,9 @@ import { APP_VERSION } from '../version';
               <a routerLink="/admin/importar" routerLinkActive="ativo">
                 <span class="ico" aria-hidden="true">📥</span> Importar fatura
               </a>
+              <a routerLink="/admin/previa/print" routerLinkActive="ativo">
+                <span class="ico" aria-hidden="true">📸</span> Prévia por print
+              </a>
               <a routerLink="/admin/utilizadores" routerLinkActive="ativo">
                 <span class="ico" aria-hidden="true">👥</span> Utilizadores
               </a>
