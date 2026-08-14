@@ -416,7 +416,9 @@ ABERTO ──aceite──► ACEITO ──pagamento + comprovante──► INFOR
 - **Pagamento** — exige o **comprovante** do PIX ou da transferência (imagem ou
   PDF, até 3 MB). Sem ele não existe registro de que o dinheiro saiu e a
   confirmação viraria palavra contra palavra. Reenviar substitui **o daquela
-  transferência**, para quem mandou o print errado.
+  transferência**, para quem mandou o print errado. A exceção é a **baixa
+  manual** do admin (§5.2), que registra quem pagou e não mandou o print — e
+  guarda o nome de quem respondeu por ela no lugar da prova.
 - A chave PIX nunca está no código: é dado pessoal do titular e o repositório é
   público. Ela é **definida pelo admin na tela** (`/admin/pix`, tabela
   `configuracao_pix`), e `JCARD_PIX_CHAVE` vale como valor inicial enquanto
@@ -460,6 +462,50 @@ Cada transferência é uma linha com **valor, data e comprovante próprios**:
 
 Migration `V4__pagamento_parcial.sql`: cada comprovante existente virou um
 pagamento do valor devido no momento, preservando a confirmação do admin.
+
+### 5.2 A baixa manual do admin
+
+Parte das pessoas paga o PIX e nunca abre o app para mandar o print. O acerto
+delas ficaria `ABERTO` para sempre e a fatura não fecharia, com o dinheiro já na
+conta — e o admin acabaria "confirmando de cabeça" um pagamento que o app diz
+não existir. A saída é registrar a transferência **em nome** da pessoa:
+
+- **Sem comprovante**, e é o admin quem responde por ela: o pagamento guarda
+  `registrado_por`. As duas origens não podem ficar indistinguíveis — uma tem
+  prova anexada, a outra tem a palavra de quem registrou —, e as duas telas
+  mostram a diferença ("baixa sua · sem comprovante" para o admin, "registrado
+  por *fulano*" para a pessoa).
+- **Já nasce confirmada**: quem registra é quem está olhando o extrato. Pedir
+  que ele clicasse "recebi" no próprio registro seria teatro.
+- **Não exige aceite** — o aceite serve para a discussão sobre o valor acontecer
+  antes de o dinheiro sair, e aqui ele já saiu. **Exige a fatura conciliada**,
+  como qualquer pagamento: dar baixa contra um total que ainda muda registraria a
+  quitação de um número provisório.
+- **A pessoa recebe e-mail.** Lançamento sem prova no nome de alguém que ela não
+  fica sabendo não é contestável — e é justamente o lançamento sem prova que mais
+  precisa ser. Quando a baixa quita a conta, esse é o único aviso: o e-mail já
+  diz que ficou quitada, e dois do mesmo ato treinam a pessoa a ignorar os dois.
+- **Dá para desfazer, e só ela** — é a saída para o valor digitado errado. O
+  pagamento declarado pelo utilizador tem comprovante, e apagar a prova de que o
+  dinheiro saiu seria negá-lo; para esse, o caminho é reabrir o acerto. Desfeita
+  a baixa, o acerto volta a ficar aberto pelo que não estiver pago (deixá-lo
+  `CONFIRMADO` diria que a pessoa pagou o que não pagou), e o aceite fica: o
+  valor devido não mudou, e anulá-lo faria ela reconferir um número por um erro
+  que não foi dela.
+- Vale para **pagamento parcial** também: a baixa de R$ 20 num acerto de R$ 53,33
+  deixa saldo, e a pessoa ainda pode pagar o resto pelo app, com o comprovante
+  dela.
+
+Migration `V7__baixa_manual.sql` (coluna `registrado_por`, `NULL` = declarado
+pelo utilizador).
+
+`AcertoService.registrarBaixa/excluirBaixa` ·
+`POST /api/acertos/{id}/pagamento` (JSON, só admin) ·
+`DELETE /api/pagamentos/{id}` (só baixa manual) · testes
+`baixaManualQuitaSemComprovante`, `baixaGuardaQuemRegistrou`,
+`baixaParcialConviveComOFluxoNormal`, `baixaExigeFaturaConciliada`,
+`desfazerBaixaReabreOAcerto`, `pagamentoComComprovanteNaoEApagavel`,
+`baixaEmAcertoConfirmadoERecusada`
 
 `PagamentoAcerto` · `AcertoService.informarPagamento/confirmarPagamento` ·
 `POST /api/faturas/{id}/pagamento` (multipart, campo `valor` opcional) ·

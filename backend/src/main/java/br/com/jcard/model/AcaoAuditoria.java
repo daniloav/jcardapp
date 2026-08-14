@@ -18,5 +18,7 @@ public enum AcaoAuditoria {
     ACEITAR_VALOR,
     INFORMAR_PAGAMENTO,
     CONFIRMAR_PAGAMENTO,
+    /** Baixa dada pelo admin em nome de quem pagou e não mandou comprovante. */
+    REGISTRAR_BAIXA,
     LOGIN
 }

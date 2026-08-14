@@ -195,6 +195,26 @@ export class ApiService {
     return this.http.post<Acerto>(`/api/pagamentos/${pagamentoId}/confirmar`, {});
   }
 
+  /**
+   * O admin registra o pagamento de quem pagou e não mandou comprovante.
+   *
+   * <p>JSON e não `FormData`: aqui não há anexo nenhum — é o que distingue esta
+   * porta da que o utilizador usa. `valor` em branco vale "pagou o que faltava".
+   */
+  registrarBaixa(acertoId: number, valor: string, pagoEm: string, observacao: string)
+      : Observable<Acerto> {
+    return this.http.post<Acerto>(`/api/acertos/${acertoId}/pagamento`, {
+      valor: valor && valor.trim() ? valor.trim().replace(',', '.') : null,
+      pagoEm: pagoEm || null,
+      observacao: observacao || null,
+    });
+  }
+
+  /** Desfaz uma baixa manual. Só ela: o pagamento declarado tem comprovante. */
+  excluirBaixa(pagamentoId: number): Observable<Acerto> {
+    return this.http.delete<Acerto>(`/api/pagamentos/${pagamentoId}`);
+  }
+
   reabrirAcerto(acertoId: number): Observable<Acerto> {
     return this.http.post<Acerto>(`/api/acertos/${acertoId}/reabrir`, {});
   }

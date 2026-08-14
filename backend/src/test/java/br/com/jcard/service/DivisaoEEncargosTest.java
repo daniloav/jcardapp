@@ -574,6 +574,126 @@ class DivisaoEEncargosTest {
                 "o admin precisa ver para poder confirmar");
     }
 
+    // ============================================ baixa manual pelo admin ===
+
+    /**
+     * O caso que motivou a baixa: a pessoa paga o PIX e nunca abre o app. Sem
+     * esta porta o acerto dela ficaria ABERTO para sempre e a fatura não
+     * fecharia, com o dinheiro na conta.
+     */
+    @Test
+    @DisplayName("o admin dá baixa em quem pagou e não mandou comprovante")
+    void baixaManualQuitaSemComprovante() {
+        Fatura f = faturaConciliadaComJoao();
+        Acerto a = acerto(f, joao);
+
+        acertos.registrarBaixa(a.id, titular, null, LocalDate.parse("2026-08-20"),
+                "PIX de 20/08 no extrato");
+
+        Acerto depois = acerto(f, joao);
+        assertEquals(StatusAcerto.CONFIRMADO, depois.status,
+                "quem registra é quem confere: a baixa já nasce confirmada");
+        assertEquals(0, BigDecimal.ZERO.compareTo(saldoDe(depois)));
+        assertEquals(LocalDate.parse("2026-08-20"), depois.pagoEm);
+        assertEquals(0, comprovantesDo(depois), "baixa manual não tem anexo nenhum");
+    }
+
+    @Test
+    @DisplayName("a baixa guarda quem a registrou — sem comprovante, é a única prova")
+    void baixaGuardaQuemRegistrou() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.registrarBaixa(acerto(f, joao).id, titular, null, null, null);
+
+        assertEquals(List.of(titular.id, titular.id),
+                autoresDaBaixa(primeiroPagamento(acerto(f, joao))),
+                "quem registrou e quem confirmou são o mesmo admin");
+    }
+
+    @Test
+    @DisplayName("baixa parcial deixa saldo, e a pessoa ainda paga o resto pelo app")
+    void baixaParcialConviveComOFluxoNormal() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.registrarBaixa(acerto(f, joao).id, titular, new BigDecimal("60.00"),
+                LocalDate.now(), "dinheiro na mão");
+
+        Acerto a = acerto(f, joao);
+        assertEquals(StatusAcerto.INFORMADO, a.status,
+                "dar por pago quem ainda deve 40 esconderia a dívida");
+        assertEquals(0, new BigDecimal("40.00").compareTo(saldoDe(a)));
+
+        acertos.aceitar(f.id, joao);
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), "o resto no pix",
+                new byte[] { 1 }, "pix.png", "image/png");
+        acertos.confirmarPagamento(idsDosPagamentos(acerto(f, joao)).get(1), titular);
+
+        assertEquals(StatusAcerto.CONFIRMADO, acerto(f, joao).status);
+        assertEquals(1, comprovantesDo(acerto(f, joao)),
+                "a baixa continua sem prova; o pagamento declarado tem a dele");
+    }
+
+    @Test
+    @DisplayName("não dá para dar baixa enquanto a fatura está em avaliação")
+    void baixaExigeFaturaConciliada() {
+        Fatura f = novaFatura("2026-08", "100.00");
+        Lancamento l = criarLancamento(f, "SUPERMERCADO", "100.00", TipoLancamento.COMPRA);
+        conciliacao.validarLeitura(f.id);
+        reivindicacoes.reivindicar(l.id, joao, null);
+        Long acertoId = acerto(f, joao).id;
+
+        WebApplicationException e = assertThrows(WebApplicationException.class,
+                () -> acertos.registrarBaixa(acertoId, titular, null, null, null));
+        assertEquals(409, e.getResponse().getStatus(),
+                "registrar quitação contra um total que ainda muda quita um número provisório");
+    }
+
+    @Test
+    @DisplayName("desfazer a baixa reabre o acerto — é a saída para o valor digitado errado")
+    void desfazerBaixaReabreOAcerto() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.registrarBaixa(acerto(f, joao).id, titular, null, null, "PIX de 12/08 no extrato");
+        Long pagamentoId = primeiroPagamento(acerto(f, joao));
+
+        acertos.excluirBaixa(pagamentoId, titular);
+
+        Acerto a = acerto(f, joao);
+        assertEquals(StatusAcerto.ABERTO, a.status,
+                "sem o pagamento, o acerto não pode continuar CONFIRMADO");
+        assertNull(a.confirmadoEm);
+        assertNull(a.pagoEm);
+        assertNull(a.observacao, "a observação descrevia o pagamento que não existe mais");
+        assertEquals(0, new BigDecimal("100.00").compareTo(saldoDe(a)));
+        assertTrue(idsDosPagamentos(a).isEmpty());
+    }
+
+    @Test
+    @DisplayName("pagamento declarado pelo utilizador não é apagável: a prova fica")
+    void pagamentoComComprovanteNaoEApagavel() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.aceitar(f.id, joao);
+        acertos.informarPagamento(f.id, joao, null, LocalDate.now(), null,
+                new byte[] { 1 }, "pix.png", "image/png");
+        Long pagamentoId = primeiroPagamento(acerto(f, joao));
+
+        WebApplicationException e = assertThrows(WebApplicationException.class,
+                () -> acertos.excluirBaixa(pagamentoId, titular));
+        assertEquals(409, e.getResponse().getStatus());
+        assertNotNull(comprovanteDo(acerto(f, joao)),
+                "apagar a prova seria negar que o dinheiro saiu");
+    }
+
+    @Test
+    @DisplayName("dar baixa em acerto já confirmado é recusado")
+    void baixaEmAcertoConfirmadoERecusada() {
+        Fatura f = faturaConciliadaComJoao();
+        acertos.registrarBaixa(acerto(f, joao).id, titular, null, null, null);
+        Long acertoId = acerto(f, joao).id;
+
+        WebApplicationException e = assertThrows(WebApplicationException.class,
+                () -> acertos.registrarBaixa(acertoId, titular, new BigDecimal("10.00"),
+                        null, null));
+        assertEquals(409, e.getResponse().getStatus());
+    }
+
     // ==================================================== excluir fatura ===
 
     @Test
@@ -717,6 +837,15 @@ class DivisaoEEncargosTest {
     BigDecimal saldoDe(Acerto a) {
         Acerto.getEntityManager().clear();
         return acertos.saldo(Acerto.findById(a.id));
+    }
+
+    /** {@code [registradoPor, confirmadoPor]} de uma baixa manual. */
+    @Transactional
+    List<Long> autoresDaBaixa(Long pagamentoId) {
+        PagamentoAcerto.getEntityManager().clear();
+        PagamentoAcerto p = PagamentoAcerto.findById(pagamentoId);
+        assertTrue(p.baixaManual(), "esperava uma baixa manual");
+        return List.of(p.registradoPor.getId(), p.confirmadoPor.getId());
     }
 
     @Transactional

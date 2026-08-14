@@ -32,6 +32,11 @@ import java.util.Locale;
  *
  * <p>O comprovante é obrigatório: é o único registro de que o PIX aconteceu. A
  * confirmação continua sendo do admin — o app não tem como saber se o dinheiro caiu.
+ *
+ * <p>Existe um atalho, e ele é do admin: quem pagou e não abriu o app ficaria com
+ * o acerto {@code ABERTO} para sempre. Aí ele dá a <b>baixa manual</b>
+ * ({@link #registrarBaixa}), sem comprovante, com o nome dele gravado no
+ * pagamento e um e-mail para a pessoa — ver {@link PagamentoAcerto#registradoPor}.
  */
 @ApplicationScoped
 public class AcertoService {
@@ -133,6 +138,120 @@ public class AcertoService {
                 + " · comprovante " + nomeArquivo);
         notificacao.pagamentoInformado(a, declarado, saldo(a));
         return p;
+    }
+
+    /**
+     * O admin registra uma transferência <b>em nome</b> do utilizador, sem
+     * comprovante — a baixa manual.
+     *
+     * <p>Parte das pessoas paga o PIX e nunca abre o app para mandar o print.
+     * Sem esta porta o acerto delas ficaria {@code ABERTO} para sempre e a
+     * fatura nunca fecharia, mesmo com o dinheiro na conta. A prova aqui é o
+     * extrato que o admin está olhando, e é por isso que a baixa já nasce
+     * confirmada: exigir que ele clicasse "recebi" no próprio registro seria
+     * teatro. O que fica registrado é <b>quem</b> registrou
+     * ({@link PagamentoAcerto#registradoPor}), porque sem comprovante essa é a
+     * única prova que existe.
+     *
+     * <p>Não exige aceite: o aceite serve para a discussão sobre o valor
+     * acontecer antes de o dinheiro sair, e aqui ele já saiu. Exige a fatura
+     * conciliada como qualquer pagamento — dar baixa contra um total que ainda
+     * muda registraria a quitação de um número provisório.
+     *
+     * <p>O utilizador é avisado por e-mail: lançaram uma baixa no nome dele, e
+     * ele precisa poder contestar.
+     */
+    @Transactional
+    public PagamentoAcerto registrarBaixa(Long acertoId, Usuario admin, BigDecimal valor,
+                                          LocalDate pagoEm, String observacao) {
+        Acerto a = buscar(acertoId);
+        exigirFaturaFechavel(a);
+        if (a.status == StatusAcerto.CONFIRMADO) {
+            throw new WebApplicationException(
+                    "Este acerto já está confirmado. Reabra antes de registrar outro pagamento.",
+                    409);
+        }
+
+        BigDecimal declarado = valorDeclarado(a, valor);
+
+        PagamentoAcerto p = new PagamentoAcerto();
+        p.acerto = a;
+        p.valor = declarado;
+        p.pagoEm = pagoEm == null ? LocalDate.now() : pagoEm;
+        p.observacao = observacao;
+        p.informadoEm = LocalDateTime.now();
+        p.registradoPor = admin;
+        // Quem registra é quem confere: a baixa nasce confirmada.
+        p.confirmadoEm = p.informadoEm;
+        p.confirmadoPor = admin;
+        p.persist();
+
+        a.status = StatusAcerto.INFORMADO;
+        a.informadoEm = p.informadoEm;
+        a.pagoEm = p.pagoEm;
+        a.observacao = observacao;
+        a.persist();
+
+        auditoria.registrar(admin, AcaoAuditoria.REGISTRAR_BAIXA, "Acerto", a.id,
+                a.usuario.nome + " · R$ " + declarado + " de R$ " + a.valorDevido
+                + " · sem comprovante"
+                + (observacao == null || observacao.isBlank() ? "" : " · " + observacao));
+        notificacao.baixaRegistradaPeloAdmin(a, declarado, saldo(a), admin);
+        quitarSeFechou(a, false);
+        return p;
+    }
+
+    /**
+     * Desfaz uma baixa manual — a saída para o valor digitado errado.
+     *
+     * <p>Só a baixa manual: o pagamento declarado pelo utilizador tem
+     * comprovante, e apagar a prova de que o dinheiro saiu seria negá-lo. A
+     * baixa não tem prova nenhuma além do dedo do admin, então é justamente ela
+     * que precisa de volta.
+     *
+     * <p>Se o acerto tinha fechado por causa dela, ele volta a ficar aberto — o
+     * saldo é derivado, e deixar {@code CONFIRMADO} com dinheiro faltando diria
+     * que a pessoa pagou o que ela não pagou. O aceite fica: o valor devido não
+     * mudou, e anulá-lo faria a pessoa reconferir um número por erro que não
+     * foi dela.
+     */
+    @Transactional
+    public Acerto excluirBaixa(Long pagamentoId, Usuario admin) {
+        PagamentoAcerto p = PagamentoAcerto.findById(pagamentoId);
+        if (p == null) {
+            throw new WebApplicationException("Pagamento não encontrado.", 404);
+        }
+        if (!p.baixaManual()) {
+            throw new WebApplicationException(
+                    "Este pagamento foi declarado pelo utilizador e tem comprovante: "
+                    + "apagá-lo seria apagar a prova de que o dinheiro saiu. "
+                    + "Reabra o acerto se o valor mudou.", 409);
+        }
+        Acerto a = p.acerto;
+        BigDecimal valor = p.valor;
+        p.delete();
+        PagamentoAcerto.getEntityManager().flush();
+
+        List<PagamentoAcerto> restantes = PagamentoAcerto.doAcerto(a.id);
+        if (saldo(a).signum() != 0 && a.status == StatusAcerto.CONFIRMADO) {
+            a.status = restantes.isEmpty() ? StatusAcerto.ABERTO : StatusAcerto.INFORMADO;
+            a.confirmadoEm = null;
+            a.confirmadoPor = null;
+        } else if (restantes.isEmpty() && a.status == StatusAcerto.INFORMADO) {
+            a.status = a.aceitoEm == null ? StatusAcerto.ABERTO : StatusAcerto.ACEITO;
+        }
+        // Os campos do acerto seguem o último pagamento: sem nenhum, não há o
+        // que apontar — e deixar a observação da baixa desfeita descreveria na
+        // listagem um pagamento que não existe mais.
+        PagamentoAcerto ultimo = restantes.isEmpty() ? null : restantes.get(restantes.size() - 1);
+        a.informadoEm = ultimo == null ? null : ultimo.informadoEm;
+        a.pagoEm = ultimo == null ? null : ultimo.pagoEm;
+        a.observacao = ultimo == null ? null : ultimo.observacao;
+        a.persist();
+
+        auditoria.registrar(admin, AcaoAuditoria.EXCLUIR, "Acerto", a.id,
+                "baixa desfeita · " + a.usuario.nome + " · R$ " + valor);
+        return a;
     }
 
     /**
@@ -250,6 +369,15 @@ public class AcertoService {
      * em aberto marcaria como pago quem ainda deve.
      */
     private void quitarSeFechou(Acerto a) {
+        quitarSeFechou(a, true);
+    }
+
+    /**
+     * @param avisar {@code false} quando quem fechou o acerto foi a baixa
+     *               manual: o e-mail dela já diz que a conta ficou quitada, e
+     *               dois avisos do mesmo ato treinam a pessoa a ignorar os dois
+     */
+    private void quitarSeFechou(Acerto a, boolean avisar) {
         List<PagamentoAcerto> pagamentos = PagamentoAcerto.doAcerto(a.id);
         boolean todosConfirmados = pagamentos.stream().allMatch(PagamentoAcerto::confirmado);
         boolean quitado = saldo(a).signum() <= 0;
@@ -260,7 +388,9 @@ public class AcertoService {
         a.confirmadoEm = LocalDateTime.now();
         a.confirmadoPor = pagamentos.get(pagamentos.size() - 1).confirmadoPor;
         a.persist();
-        notificacao.pagamentoConfirmado(a);
+        if (avisar) {
+            notificacao.pagamentoConfirmado(a);
+        }
     }
 
     private void salvarComprovante(PagamentoAcerto p, byte[] arquivo, String nome, String tipo) {

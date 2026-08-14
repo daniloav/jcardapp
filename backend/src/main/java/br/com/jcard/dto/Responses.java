@@ -233,13 +233,19 @@ public final class Responses {
      * @param temComprovante o anexo nunca vem embutido: é binário, e a lista do
      *                       admin carrega os pagamentos de todos os acertos da
      *                       fatura de uma vez
+     * @param registradoPor  o admin que deu a baixa em nome da pessoa, ou
+     *                       {@code null} quando foi ela que declarou. A tela
+     *                       precisa separar os dois: um tem comprovante para
+     *                       abrir, o outro tem o nome de quem respondeu por ele
      */
     public record PagamentoResponse(Long id, BigDecimal valor, LocalDate pagoEm,
                                     String observacao, LocalDateTime informadoEm,
-                                    LocalDateTime confirmadoEm, boolean temComprovante) {
+                                    LocalDateTime confirmadoEm, boolean temComprovante,
+                                    String registradoPor) {
         public static PagamentoResponse de(PagamentoAcerto p, boolean temComprovante) {
             return new PagamentoResponse(p.id, p.valor, p.pagoEm, p.observacao,
-                    p.informadoEm, p.confirmadoEm, temComprovante);
+                    p.informadoEm, p.confirmadoEm, temComprovante,
+                    p.registradoPor == null ? null : p.registradoPor.nome);
         }
     }
 
@@ -272,8 +278,7 @@ public final class Responses {
          */
         public static List<AcertoResponse> daFatura(Long faturaId, List<Acerto> acertos) {
             Map<Long, List<PagamentoAcerto>> porAcerto = new java.util.HashMap<>();
-            for (PagamentoAcerto p : PagamentoAcerto.<PagamentoAcerto>list(
-                    "acerto.fatura.id = ?1 order by pagoEm, id", faturaId)) {
+            for (PagamentoAcerto p : PagamentoAcerto.daFatura(faturaId)) {
                 porAcerto.computeIfAbsent(p.acerto.getId(), k -> new java.util.ArrayList<>()).add(p);
             }
             Set<Long> comComprovante =

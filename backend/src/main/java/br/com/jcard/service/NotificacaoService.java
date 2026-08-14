@@ -285,6 +285,39 @@ public class NotificacaoService {
         }
     }
 
+    /**
+     * Avisa a <b>pessoa</b> de que o admin deu baixa em nome dela.
+     *
+     * <p>É o contrapeso da baixa manual: sem comprovante, o único registro do
+     * pagamento é o que o admin digitou, e quem tem como dizer "esse valor não
+     * é o que eu paguei" é ela. Um lançamento no nome de alguém que a pessoa
+     * não fica sabendo não é contestável — e é justamente o lançamento sem
+     * prova que mais precisa ser.
+     */
+    public void baixaRegistradaPeloAdmin(Acerto a, BigDecimal pago, BigDecimal saldo,
+                                         Usuario admin) {
+        if (!habilitado || a.usuario.email == null || a.usuario.email.isBlank()) {
+            return;
+        }
+        String falta = saldo.signum() > 0
+                ? "<p>Ainda constam <strong>R$ %s</strong> em aberto dos R$ %s da sua conta.</p>"
+                        .formatted(valor(saldo), valor(a.valorDevido))
+                : "<p>Com isso a sua conta de R$ %s fica quitada.</p>".formatted(valor(a.valorDevido));
+        String corpo = """
+                <p>Olá, %s!</p>
+                <p><strong>%s</strong> registrou um pagamento seu de <strong>R$ %s</strong>
+                na fatura de <strong>%s</strong>, a partir do extrato — sem comprovante
+                no app.</p>
+                %s
+                <p>Se o valor ou a data não conferem com o que você pagou, avise o
+                administrador.</p>
+                <p><a href="%s">Ver no JcardApp</a></p>
+                """.formatted(primeiroNome(a.usuario.nome), admin.nome, valor(pago),
+                a.fatura.competencia.format(MES), falta, appUrl);
+        dispatcher.enfileirar(Mail.withHtml(a.usuario.email,
+                "JcardApp · pagamento registrado pelo administrador", corpo));
+    }
+
     /** Confirmação de recebimento pelo admin — fecha o ciclo para o utilizador. */
     public void pagamentoConfirmado(Acerto a) {
         if (!habilitado || a.usuario.email == null || a.usuario.email.isBlank()) {

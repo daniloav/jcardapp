@@ -13,6 +13,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
@@ -103,6 +104,40 @@ public class AcertoResource {
     public Responses.AcertoResponse confirmar(@PathParam("id") Long id) {
         return Responses.AcertoResponse.de(
                 servico.confirmarPagamento(id, logado.get()).acerto);
+    }
+
+    /**
+     * O admin registra o pagamento de quem pagou e não mandou o comprovante.
+     *
+     * <p>É JSON, e não multipart: aqui não há anexo nenhum — é exatamente o que
+     * distingue esta porta da que o utilizador usa. O nome do admin fica gravado
+     * no pagamento, e a pessoa recebe e-mail para poder contestar.
+     */
+    @POST
+    @Path("/acertos/{id}/pagamento")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RolesAllowed(TokenService.ADMIN)
+    @Transactional
+    public Responses.AcertoResponse registrarBaixa(@PathParam("id") Long id,
+                                                   @Valid Requests.BaixaManual req) {
+        return Responses.AcertoResponse.de(servico.registrarBaixa(id, logado.get(),
+                req == null ? null : req.valor(),
+                req == null ? null : req.pagoEm(),
+                req == null ? null : req.observacao()).acerto);
+    }
+
+    /**
+     * Desfaz uma baixa manual — a saída para o valor digitado errado.
+     *
+     * <p>Só vale para a baixa: o pagamento declarado pelo utilizador tem
+     * comprovante, e apagar a prova de que o dinheiro saiu seria negá-lo.
+     */
+    @DELETE
+    @Path("/pagamentos/{id}")
+    @RolesAllowed(TokenService.ADMIN)
+    @Transactional
+    public Responses.AcertoResponse excluirBaixa(@PathParam("id") Long id) {
+        return Responses.AcertoResponse.de(servico.excluirBaixa(id, logado.get()));
     }
 
     @POST

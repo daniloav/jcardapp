@@ -152,6 +152,12 @@ interface Grupo {
                         comprovante
                       </button>
                     }
+                    <!-- Pagamento que você não declarou aqui: quem registrou foi
+                         o administrador, pelo extrato. Dizer isso é o que torna
+                         o valor contestável — não há comprovante para conferir. -->
+                    @if (p.registradoPor) {
+                      <span class="tag">registrado por {{ p.registradoPor }}</span>
+                    }
                     @if (p.observacao) {
                       <div class="meta">{{ p.observacao }}</div>
                     }
@@ -162,7 +168,7 @@ interface Grupo {
                 <p class="meta">
                   O seu total mudou depois do primeiro pagamento. Confira o valor de
                   novo e mande só a diferença — o que você já pagou continua
-                  registrado, com o comprovante.
+                  registrado aqui.
                 </p>
               }
             </div>

@@ -95,6 +95,23 @@ public final class Requests {
             @NotBlank(message = "Informe o nome de quem recebe") @Size(max = 120) String titular) {
     }
 
+    /**
+     * A baixa que o admin dá em nome de quem pagou e não mandou comprovante.
+     *
+     * @param valor    em branco vale "pagou o que faltava", como no pagamento
+     *                 declarado pela própria pessoa — é o caso comum, e redigitar
+     *                 um número que a tela acabou de mostrar só cria divergência
+     *                 de centavo
+     * @param pagoEm   a data da entrada no extrato; em branco, hoje
+     * @param observacao de onde saiu a informação ("PIX de 12/08, extrato do Itaú"):
+     *                 sem comprovante, é o que sobra para conferir depois
+     */
+    public record BaixaManual(
+            java.math.BigDecimal valor,
+            java.time.LocalDate pagoEm,
+            @Size(max = 400) String observacao) {
+    }
+
     public record Cartao(
             @NotBlank @Size(max = 80) String apelido,
             @NotBlank @Size(min = 4, max = 4, message = "Informe os 4 últimos dígitos")

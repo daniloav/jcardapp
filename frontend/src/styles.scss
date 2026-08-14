@@ -528,6 +528,25 @@ td > .pagamentos { min-width: 15rem; }
 /* Quanto ainda falta — é o número que decide se o admin pode fechar a fatura. */
 .falta { color: var(--erro); }
 
+/* O formulário da baixa manual, dentro da célula do acerto. Discreto de
+   propósito: é o atalho de exceção, não o caminho normal — o caminho normal é a
+   pessoa declarar o pagamento com o comprovante dela. */
+.baixa {
+  margin-top: 0.5rem;
+  padding: 0.6rem;
+  border-radius: var(--raio);
+  background: #f7f9fb;
+  min-width: 15rem;
+
+  label { font-size: 0.85rem; }
+  input { margin: 0.15rem 0 0.4rem; }
+  .meta { color: var(--texto-suave); font-size: 0.85rem; margin-bottom: 0.4rem; }
+  /* Valor e data lado a lado enquanto couber: são dois campos curtos. */
+  .campos { display: flex; flex-wrap: wrap; gap: 0 0.5rem; }
+  .campos label { flex: 1 1 7rem; }
+  .linha { gap: 0.5rem; }
+}
+
 /* A conta de uma pessoa aberta para conferência, dentro do cartão. Separada por
    uma linha porque é uma leitura longa: duas tabelas e um total. */
 .detalhe-conta {
